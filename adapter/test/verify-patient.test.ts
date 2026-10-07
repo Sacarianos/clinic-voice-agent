@@ -60,4 +60,36 @@ describe("Verify patient", () => {
       expect(response.body).toEqual({ status: "not_verified" });
     }
   });
+
+  describe("two Patients who share a date of birth and sound alike", () => {
+    let dateOfBirth: string;
+    let smithId: string;
+    let smythId: string;
+    beforeAll(async () => {
+      dateOfBirth = await unusedBirthDate();
+      smithId = await createPatient({ given: ["Joanna"], family: "Smith", birthDate: dateOfBirth });
+      smythId = await createPatient({ given: ["Johanna"], family: "Smyth", birthDate: dateOfBirth });
+    });
+
+    test("a name that matches both is ambiguous", async () => {
+      const response = await verify({ givenName: "Jo", familyName: "Smithe", dateOfBirth });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: "ambiguous" });
+    });
+
+    test("the spelled-out surname picks the one it spells", async () => {
+      const smith = await verify({ givenName: "Jo", familyName: "S M I T H", dateOfBirth });
+      const smyth = await verify({ givenName: "Jo", familyName: "S-M-Y-T-H", dateOfBirth });
+
+      expect(smith.body).toEqual({ status: "verified", patientId: smithId });
+      expect(smyth.body).toEqual({ status: "verified", patientId: smythId });
+    });
+
+    test("the exact given name picks the one it names", async () => {
+      const response = await verify({ givenName: "Johanna", familyName: "Smithe", dateOfBirth });
+
+      expect(response.body).toEqual({ status: "verified", patientId: smythId });
+    });
+  });
 });
