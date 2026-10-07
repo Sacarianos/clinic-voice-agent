@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
@@ -18,7 +19,7 @@ from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 
-VISIT_TYPES = {"annual_physical": "an annual physical", "sick_visit": "a sick visit", "follow_up": "a follow-up"}
+VISIT_TYPES = {"annual_physical": "annual physical", "sick_visit": "sick visit", "follow_up": "follow-up"}
 
 SLOT_GONE = "I'm sorry, that time was just taken."
 
@@ -48,17 +49,24 @@ or find_slots for new times. If they are unsure, answer their question and ask a
 
 @dataclass(frozen=True)
 class Exits:
-    """Where booking hands the call back to the rest of the conversation."""
+    """Where booking, rescheduling and cancelling hand the call back to the rest of the conversation."""
 
-    booked: Callable[[str], NodeConfig]  # back to Intent, after saying this line
+    back_to_intent: Callable[[str], NodeConfig]  # back to Intent, after saying this line
     handoff: Callable[[str], NodeConfig]  # Handoff with this message
 
 
 @dataclass(frozen=True)
-class _Booking:
+class Booking:
+    """Find slot and Read-back for a new Appointment. Rescheduling reuses Find slot with its own Read-back."""
+
     ehr: EhrAdapter
     providers: list[Provider]
     exits: Exits
+
+    find_slot_task: ClassVar[str] = FIND_SLOT_TASK
+    choose_slot_description: ClassVar[str] = (
+        "Pick the offered time the caller wants and the visit type, before reading them back."
+    )
 
     def find_slots_tool(self) -> FlowsFunctionSchema:
         async def find_slots(args: dict, flow_manager: FlowManager):
@@ -104,21 +112,30 @@ class _Booking:
             slot = flow_manager.state.get("offered_slots", {}).get(args.get("slot_id"))
             if slot is None:
                 return {"status": "not_offered", "error": "Pick a slot_id that find_slots returned"}, None
-            if args.get("visit_type") not in VISIT_TYPES:
-                return {"status": "unknown_visit_type", "visit_types": list(VISIT_TYPES)}, None
-            return {"status": "chosen"}, self.read_back_node(slot, args["visit_type"])
+            return self.chosen(slot, args)
 
         return FlowsFunctionSchema(
             name="choose_slot",
-            description="Pick the offered time the caller wants and the visit type, before reading them back.",
+            description=self.choose_slot_description,
             properties={
                 "slot_id": {"type": "string", "description": "The slot_id of the time the caller picked"},
-                "visit_type": {"type": "string", "enum": list(VISIT_TYPES)},
+                **self.choice_properties,
             },
-            required=["slot_id", "visit_type"],
+            required=["slot_id", *self.choice_properties],
             handler=choose_slot,
             cancel_on_interruption=True,
         )
+
+    @property
+    def choice_properties(self) -> dict:
+        """What choose_slot needs besides the Slot."""
+        return {"visit_type": {"type": "string", "enum": list(VISIT_TYPES)}}
+
+    def chosen(self, slot: Slot, args: dict) -> tuple[dict, NodeConfig | None]:
+        """Where choose_slot goes once the Caller picked an offered Slot."""
+        if args.get("visit_type") not in VISIT_TYPES:
+            return {"status": "unknown_visit_type", "visit_types": list(VISIT_TYPES)}, None
+        return {"status": "chosen"}, self.read_back_node(slot, args["visit_type"])
 
     def book_tool(self, slot: Slot, visit_type: str) -> FlowsFunctionSchema:
         # One key per Read-back: a retry of this Book is the same write, never a second Appointment.
@@ -133,12 +150,9 @@ class _Booking:
             )
             if written.outcome == "succeeded":
                 booked = f"You're all booked: {_details(slot, visit_type)}. Is there anything else I can help with?"
-                return {"outcome": "succeeded"}, self.exits.booked(booked)
+                return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)
             if written.outcome == "rejected":
-                flow_manager.state.get("offered_slots", {}).pop(slot.slot_id, None)
-                search = await self.ehr.find_slots(**flow_manager.state.get("last_slot_search", {}))
-                result = {"outcome": "rejected", "reason": written.reason, **self._offer(search, flow_manager)}
-                return result, self.find_slot_node(opening_line=SLOT_GONE)
+                return await self.slot_lost(slot, written.reason, flow_manager)
             return {"outcome": written.outcome}, self.exits.handoff(BOOKING_FAILED)
 
         return FlowsFunctionSchema(
@@ -152,10 +166,17 @@ class _Booking:
             timeout_secs=10,
         )
 
+    async def slot_lost(self, slot: Slot, reason: str | None, flow_manager: FlowManager) -> tuple[dict, NodeConfig]:
+        """The write was rejected because the Slot can't be had any more. Offer other times."""
+        flow_manager.state.get("offered_slots", {}).pop(slot.slot_id, None)
+        search = await self.ehr.find_slots(**flow_manager.state.get("last_slot_search", {}))
+        result = {"outcome": "rejected", "reason": reason, **self._offer(search, flow_manager)}
+        return result, self.find_slot_node(opening_line=SLOT_GONE)
+
     def find_slot_node(self, opening_line: str | None = None) -> NodeConfig:
         node: NodeConfig = {
             "name": "find_slot",
-            "task_messages": [{"role": "developer", "content": FIND_SLOT_TASK}],
+            "task_messages": [{"role": "developer", "content": self.find_slot_task}],
             "functions": [self.find_slots_tool(), self.choose_slot_tool()],
         }
         if opening_line:
@@ -176,7 +197,7 @@ class _Booking:
         offered.update({slot.slot_id: slot for slot in search.slots})
         return {
             "slots": [
-                {"slot_id": slot.slot_id, "provider": slot.provider_name, "time": _spoken_time(slot.start)}
+                {"slot_id": slot.slot_id, "provider": slot.provider_name, "time": spoken_time(slot.start)}
                 for slot in search.slots
             ],
             "booking_window_ends": _spoken_date(search.booking_window_last_day),
@@ -185,7 +206,7 @@ class _Booking:
 
 def find_slots_tool(ehr: EhrAdapter, providers: list[Provider], exits: Exits) -> FlowsFunctionSchema:
     """The way into booking: searching for open times. Offer it once the Caller is a Verified Patient."""
-    return _Booking(ehr, providers, exits).find_slots_tool()
+    return Booking(ehr, providers, exits).find_slots_tool()
 
 
 def _provider_named(name: str | None, providers: list[Provider]) -> Provider | None:
@@ -198,14 +219,20 @@ def _provider_named(name: str | None, providers: list[Provider]) -> Provider | N
 
 
 def _details(slot: Slot, visit_type: str) -> str:
-    return f"{VISIT_TYPES[visit_type]} with {slot.provider_name} on {_spoken_time(slot.start)}"
+    article = "an" if VISIT_TYPES[visit_type][0] in "aeiou" else "a"
+    return f"{article} {spoken_appointment(visit_type, slot.provider_name, slot.start)}"
+
+
+def spoken_appointment(visit_type: str, provider_name: str, start: datetime) -> str:
+    """Such as "sick visit with Dr. Imogen Faraday on Thursday, October 8 at 9 AM"."""
+    return f"{VISIT_TYPES[visit_type]} with {provider_name} on {spoken_time(start)}"
 
 
 def _spoken_date(day: date) -> str:
     return f"{day:%A}, {day:%B} {day.day}"
 
 
-def _spoken_time(start: datetime) -> str:
+def spoken_time(start: datetime) -> str:
     hour = start.hour % 12 or 12
     minutes = f":{start:%M}" if start.minute else ""
     return f"{_spoken_date(start)} at {hour}{minutes} {'AM' if start.hour < 12 else 'PM'}"

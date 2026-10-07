@@ -7,6 +7,7 @@ tool on the LLM directly: a handler registered that way runs whatever the curren
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
+from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
 from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
@@ -143,7 +144,8 @@ async def _intent_node(ehr: EhrAdapter) -> NodeConfig:
             "respond_immediately": False,
         }
 
-    functions = [find_slots_tool(ehr, providers, Exits(booked=back_to_intent, handoff=_handoff_node))]
+    exits = Exits(back_to_intent=back_to_intent, handoff=_handoff_node)
+    functions = [find_slots_tool(ehr, providers, exits), list_appointments_tool(ehr, providers, exits)]
     return {
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],
