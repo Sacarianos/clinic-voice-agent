@@ -52,6 +52,7 @@ class ToolCall:
     name: str
     arguments: dict
     result: Any
+    transcript_position: int  # how many transcript lines came before the result, to tell what was said before and after
 
 
 class TextCall:
@@ -293,4 +294,5 @@ class _TurnWatch(BaseObserver):
             self._tools_running.update(call.tool_call_id for call in frame.function_calls)
         elif isinstance(frame, FunctionCallResultFrame) and from_llm:
             self._tools_running.discard(frame.tool_call_id)
-            self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result))
+            position = len(self._call.transcript)
+            self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result, position))

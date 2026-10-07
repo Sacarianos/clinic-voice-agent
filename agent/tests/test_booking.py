@@ -77,6 +77,10 @@ async def test_a_verified_patient_books_a_slot_after_a_read_back_and_a_yes(ehr, 
         assert ehr.slot_status(nine_slot) == "busy"
         assert "booked" in call.agent_lines[-1]
         assert not call.ended
+        [book] = [tool for tool in call.tool_calls if tool.name == "book_appointment"]
+        said_before_the_result = [line for _, line in call.transcript[: book.transcript_position]]
+        assert read_back in said_before_the_result
+        assert call.agent_lines[-1] not in said_before_the_result
 
 
 @pytest.mark.scripted_only

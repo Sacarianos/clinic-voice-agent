@@ -80,11 +80,19 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           enable-cache: true
-          cache-dependency-glob: agent/uv.lock
+          cache-dependency-glob: |
+            agent/uv.lock
+            evals/uv.lock
       - run: uv sync --frozen
       # Fakes stand in for Deepgram and the LLM, so no API keys are needed.
       # The tests wait for HAPI and the adapter to answer before the first conversation.
       - run: uv run pytest
+      # The eval harness's own tests: graders, and runs with a scripted agent and Caller. Real evals cost money and never run here.
+      - name: Eval harness tests
+        working-directory: evals
+        run: |
+          uv sync --frozen
+          uv run pytest
       - name: Show the adapter log
         if: failure()
         run: cat "$RUNNER_TEMP/adapter.log"

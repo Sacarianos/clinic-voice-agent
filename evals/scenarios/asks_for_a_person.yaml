@@ -1,0 +1,11 @@
+summary: A Patient with a billing question wants a person and gets a Handoff.
+patient: {given: Marguerite, family: Villanueva}
+provider: null
+caller:
+  goal: Speak to a real person at the clinic about a bill you got in the mail.
+  twist: >-
+    If the receptionist asks for your name and date of birth or offers to help you itself, say you
+    would rather talk to a person.
+expect:
+  appointments: []
+  handoff: true

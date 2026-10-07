@@ -1,0 +1,16 @@
+summary: A Patient books a yearly checkup and picks the latest morning time.
+patient: {given: Rosalind, family: Okonkwo}
+provider: {given: Imogen, family: Faraday}
+slots:
+  early: {weekday: 2, at: "09:00"}
+  late: {weekday: 2, at: "11:00"}
+  afternoon: {weekday: 2, at: "15:00"}
+caller:
+  goal: Book your yearly checkup with Dr. Imogen Faraday on {early_day}, in the morning.
+  twist: >-
+    You call it your yearly checkup and never use the words annual physical. When you hear the
+    morning times, ask for the latest one before noon.
+expect:
+  appointments:
+    - {slot: late, visit_type: annual_physical}
+  handoff: false
