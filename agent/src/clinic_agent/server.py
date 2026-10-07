@@ -44,6 +44,7 @@ def create_app(
     make_services: Callable[[], VoiceServices],
     *,
     twilio: TwilioAccount | None = None,
+    tracing: bool = False,
 ) -> FastAPI:
     app = FastAPI()
 
@@ -86,7 +87,13 @@ def create_app(
             params=PipelineParams(
                 audio_in_sample_rate=PHONE_SAMPLE_RATE,
                 audio_out_sample_rate=PHONE_SAMPLE_RATE,
+                enable_metrics=True,  # STT, LLM and TTS time to first byte on each span
+                enable_usage_metrics=True,
             ),
+            enable_tracing=tracing,
+            enable_turn_tracking=True,
+            conversation_id=call_data.call_id,
+            additional_span_attributes={"langfuse.session.id": call_data.call_id},
         )
 
         @transport.event_handler("on_client_connected")

@@ -2,11 +2,10 @@ import xml.etree.ElementTree as ET
 
 from fakes import RecordingTTS, ScriptedLLM, SilentSTT
 from starlette.testclient import TestClient
+from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
 from clinic_agent.server import VoiceServices, create_app
 
-CALL_SID = "CA00000000000000000000000000000001"
-STREAM_SID = "MZ00000000000000000000000000000001"
 GREETING = "Thanks for calling the clinic. How can I help you today?"
 
 
@@ -39,37 +38,10 @@ def test_caller_hears_the_agent_greet_them_as_soon_as_the_call_connects():
     app = create_app(lambda: VoiceServices(stt=SilentSTT(), llm=ScriptedLLM([GREETING]), tts=tts))
 
     with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
-        _start_media_stream(twilio)
-        audio = _next_media_message(twilio)
-        twilio.send_json({"event": "stop", "streamSid": STREAM_SID, "stop": {"callSid": CALL_SID}})
+        start_media_stream(twilio)
+        audio = next_media_message(twilio)
+        hang_up(twilio)
 
     assert audio["streamSid"] == STREAM_SID
     assert audio["media"]["payload"]
     assert " ".join(sentence.strip() for sentence in tts.spoken) == GREETING
-
-
-def _start_media_stream(twilio):
-    """The two messages Twilio sends when a <Stream> opens."""
-    twilio.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
-    twilio.send_json(
-        {
-            "event": "start",
-            "sequenceNumber": "1",
-            "streamSid": STREAM_SID,
-            "start": {
-                "streamSid": STREAM_SID,
-                "callSid": CALL_SID,
-                "accountSid": "AC00000000000000000000000000000001",
-                "tracks": ["inbound"],
-                "customParameters": {},
-                "mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000, "channels": 1},
-            },
-        }
-    )
-
-
-def _next_media_message(twilio):
-    while True:
-        message = twilio.receive_json()
-        if message["event"] == "media":
-            return message
