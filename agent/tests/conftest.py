@@ -14,11 +14,15 @@ import pytest
 from ehr import Ehr
 from fakes import ScriptedLLM
 from faulty_adapter import FaultyAdapter
+from langfuse_stand_in import FakeLangfuse
+from opentelemetry import trace
 
+from clinic_agent.audit import AuditLog
 from clinic_agent.conversation import ROLE
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.llm import create_llm
 from clinic_agent.text_call import TextCall
+from clinic_agent.tracing import configure_tracing
 
 FHIR_BASE_URL = os.environ.get("FHIR_BASE_URL", "http://localhost:8080/fhir").rstrip("/")
 EHR_ADAPTER_URL = os.environ.get("EHR_ADAPTER_URL", "http://localhost:3000").rstrip("/")
@@ -73,6 +77,36 @@ def _ehr_ready():
             time.sleep(2)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _audit_log_path(tmp_path_factory):
+    """Keeps every test's audit log entries out of the working directory. Tests tell theirs apart by patient id."""
+    path = tmp_path_factory.mktemp("audit") / "audit-log.jsonl"
+    os.environ["AUDIT_LOG_PATH"] = str(path)
+    yield
+    del os.environ["AUDIT_LOG_PATH"]
+
+
+@pytest.fixture
+def audit_log() -> AuditLog:
+    return AuditLog.from_env(os.environ)
+
+
+@pytest.fixture(scope="session")
+def langfuse():
+    """Traces every call that turns tracing on to a local stand-in for Langfuse Cloud.
+
+    OpenTelemetry's tracer provider is process-wide and can be installed only once, so every test that
+    traces shares this one.
+    """
+    server = FakeLangfuse()
+    env = {"LANGFUSE_PUBLIC_KEY": "pk-lf-test", "LANGFUSE_SECRET_KEY": "sk-lf-test", "LANGFUSE_BASE_URL": server.url}
+    assert configure_tracing(env) is True
+    yield server
+    # Flush and stop the exporter while the server can still answer it.
+    trace.get_tracer_provider().shutdown()
+    server.close()
+
+
 @pytest.fixture
 def ehr_adapter_url(_ehr_ready) -> str:
     return EHR_ADAPTER_URL
@@ -104,13 +138,15 @@ def start_call(ehr, llm_config):
     """
     phones = []
 
-    def start(script: list, *, adapter_url: str = EHR_ADAPTER_URL) -> TextCall:
-        phone = f"+1555{random.randrange(10**7):07d}"
+    def start(
+        script: list, *, adapter_url: str = EHR_ADAPTER_URL, caller_phone: str | None = None, tracing: bool = False
+    ) -> TextCall:
+        phone = caller_phone or f"+1555{random.randrange(10**7):07d}"
         phones.append(phone)
         if llm_config == "scripted":
-            return TextCall(ScriptedLLM(script), EhrAdapter(adapter_url), caller_phone=phone)
+            return TextCall(ScriptedLLM(script), EhrAdapter(adapter_url), caller_phone=phone, tracing=tracing)
         llm = create_llm({**os.environ, "LLM_CONFIG": llm_config}, system_instruction=ROLE)
-        return TextCall(llm, EhrAdapter(adapter_url), caller_phone=phone, reply_timeout_secs=30)
+        return TextCall(llm, EhrAdapter(adapter_url), caller_phone=phone, reply_timeout_secs=30, tracing=tracing)
 
     yield start
     for phone in phones:

@@ -6,6 +6,7 @@ Conversation tests and the eval harness's own tests use it to drive the real flo
 import uuid
 from dataclasses import dataclass, field
 
+from loguru import logger
 from pipecat.frames.frames import (
     Frame,
     FunctionCallFromLLM,
@@ -14,9 +15,11 @@ from pipecat.frames.frames import (
     LLMFullResponseStartFrame,
     LLMTextFrame,
 )
+from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.llm_service import LLMService
 from pipecat.services.settings import LLMSettings
+from pipecat.utils.tracing.service_decorators import traced_llm
 
 
 @dataclass(frozen=True)
@@ -28,7 +31,11 @@ class CallTool:
 
 
 class ScriptedLLM(LLMService):
-    """Answers each LLM run with the next scripted step: a line to speak or a CallTool."""
+    """Answers each LLM run with the next scripted step: a line to speak or a CallTool.
+
+    Like a real LLM service, it logs the context it was given at DEBUG level and traces each run as an
+    `llm` span holding the context and its reply, so logs and traces carry what they would on a real call.
+    """
 
     def __init__(self, steps: list[str | CallTool]):
         super().__init__(
@@ -53,6 +60,11 @@ class ScriptedLLM(LLMService):
         if not isinstance(frame, LLMContextFrame):
             await self.push_frame(frame, direction)
             return
+        await self._process_context(frame.context)
+
+    @traced_llm
+    async def _process_context(self, context: LLMContext):
+        logger.debug(f"{self}: Generating chat from context {self.get_llm_adapter().get_messages_for_logging(context)}")
         step = self.steps.pop(0) if self.steps else "(script exhausted)"
         await self.push_frame(LLMFullResponseStartFrame())
         if isinstance(step, CallTool):
@@ -62,7 +74,7 @@ class ScriptedLLM(LLMService):
                         function_name=step.name,
                         tool_call_id=f"call_{uuid.uuid4().hex[:8]}",
                         arguments=step.arguments,
-                        context=frame.context,
+                        context=context,
                     )
                 ]
             )

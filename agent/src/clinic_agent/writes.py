@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
+from clinic_agent.audit import AuditLog, Write
 from clinic_agent.ehr import WriteOutcome
 from clinic_agent.escalation import HandoffReason
 
@@ -23,16 +24,36 @@ WRITE_TOOL_TIMEOUT_SECS = 45
 
 
 async def write_until_settled(
-    write: Callable[[], Awaitable[WriteOutcome]], is_done: Callable[[], Awaitable[bool]]
+    audit_log: AuditLog,
+    write: Write,
+    send: Callable[[], Awaitable[WriteOutcome]],
+    is_done: Callable[[], Awaitable[bool]],
 ) -> WriteOutcome:
-    """Runs the write, and once more unless it settled. Each call of `write` must send the same idempotency key.
+    """Sends the write, and once more unless it settled. Each call of `send` must send the same idempotency key.
 
-    is_done reads the EHR and says whether everything the write was for is in place.
+    is_done reads the EHR and says whether everything the write was for is in place. Every attempt is
+    recorded in the audit log exactly once, including one that raises or is cancelled.
     """
-    for _ in range(ATTEMPTS):
-        outcome = await write()
-        if outcome.outcome == "unknown":
-            outcome = await _reconcile(is_done)
+    for attempt in range(1, ATTEMPTS + 1):
+        sent: WriteOutcome | None = None
+        reconciled: WriteOutcome | None = None
+        error: str | None = None
+        try:
+            sent = await send()
+            if sent.outcome == "unknown":
+                reconciled = await _reconcile(is_done)
+        except BaseException as raised:
+            error = type(raised).__name__
+            raise
+        finally:
+            audit_log.record(
+                write,
+                attempt=attempt,
+                outcome=sent.outcome if sent else "error",
+                reason=(sent.reason if sent else None) or error,
+                reconciled=reconciled.outcome if reconciled else None,
+            )
+        outcome = reconciled or sent
         if outcome.outcome in ("succeeded", "rejected"):
             return outcome
     return outcome

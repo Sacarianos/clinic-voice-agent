@@ -12,6 +12,7 @@ from typing import ClassVar
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
+from clinic_agent.audit import Write
 from clinic_agent.booking import VISIT_TYPES, Booking, Exits, spoken_appointment, spoken_time
 from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutcome
 from clinic_agent.escalation import handoff
@@ -145,7 +146,10 @@ class _Appointments:
                     return False
                 return await self.ehr.slot_is_free(appointment.slot_id)
 
-            written = await write_until_settled(cancel, is_cancelled)
+            write = Write(
+                "cancel", patient_id, idempotency_key, appointment_id=appointment.appointment_id, slot_id=appointment.slot_id
+            )
+            written = await write_until_settled(self.ehr.audit_log, write, cancel, is_cancelled)
             if written.outcome == "succeeded":
                 cancelled = f"Your {_details(appointment)} is cancelled. {ANYTHING_ELSE}"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(cancelled)
@@ -219,7 +223,8 @@ class _Rescheduling(Booking):
                 listed = await self.ehr.appointments(patient_id)
                 return any(a.appointment_id == appointment_id and a.slot_id == slot.slot_id for a in listed)
 
-            written = await write_until_settled(reschedule, is_moved)
+            write = Write("reschedule", patient_id, idempotency_key, appointment_id=appointment_id, slot_id=slot.slot_id)
+            written = await write_until_settled(self.ehr.audit_log, write, reschedule, is_moved)
             if written.outcome == "succeeded":
                 moved = (
                     f"Done. Your {VISIT_TYPES[self.appointment.visit_type]} is now on {spoken_time(slot.start)} "
