@@ -8,6 +8,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.45.1",
     "pipecat-ai[anthropic,deepgram,openrouter,silero,tracing,websocket]==1.12.0",
     "python-multipart>=0.0.32",
+    "tzdata>=2026.5",
     "uvicorn>=0.54.0",
 ]
 
