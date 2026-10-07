@@ -19,10 +19,12 @@ async def test_before_verification_the_llm_is_offered_only_verify_patient(ehr, s
         await call.say("Book me with Dr. Whitfield on Thursday morning, please.")
         await call.say(f"Rosalind Okonkwo, {spoken(born)}.")
 
-        *before_verification, after_verification = call.offered_tools
+        # A real LLM may run more than once after verification, for example to look for Slots straight away.
+        verified_at = next(i for i, tools in enumerate(call.offered_tools) if "verify_patient" not in tools)
+        before_verification = call.offered_tools[:verified_at]
         assert before_verification
         assert all(tools == ["verify_patient"] for tools in before_verification)
-        assert "verify_patient" not in after_verification
+        assert all("verify_patient" not in tools for tools in call.offered_tools[verified_at:])
 
 
 @pytest.mark.scripted_only
