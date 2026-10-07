@@ -52,6 +52,8 @@ Copy `.env.example` to `.env` for the API keys later tickets need.
 
 The voice server lives in `agent/`. Twilio posts each incoming call to `POST /voice`, which answers with TwiML that opens a media stream to `WS /ws`. Every call runs its own Pipecat pipeline: Silero VAD, Deepgram Nova-3, the configured LLM, and Deepgram Aura-2.
 
+The conversation is a `pipecat.flows` state machine in `agent/src/clinic_agent/conversation.py`. The agent greets the Caller and runs Identity Verification through the adapter before anything else. A name that matches several Patients gets a request to spell the last name. A failed attempt gets the same failure message whatever didn't match, and a second one ends the call with a Handoff message. Once verified, the call moves on to Intent. Each state offers the LLM only its own tools, so nothing past verification can be reached before it (see [ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md)). The server needs the local EHR stack running and reaches the adapter at `EHR_ADAPTER_URL`, `http://localhost:3000` by default.
+
 You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 4.5 and `ANTHROPIC_API_KEY`. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. With `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` set, the agent can hang up calls itself. With both Langfuse keys set, every call is traced to Langfuse Cloud.
 
 Start the server, then the tunnel in a second terminal:
@@ -74,11 +76,27 @@ In Langfuse, each call is one trace session named by its Twilio CallSid. The `co
 
 Until the PHI masking work lands, traces and debug logs hold the raw transcript. Say only synthetic names and dates on test calls.
 
-Agent tests need no keys and no network:
+Agent tests need no API keys. The conversation tests run whole calls as typed text through the same flow, against the real adapter and HAPI, so start the local EHR stack first. Set `FHIR_BASE_URL` and `EHR_ADAPTER_URL` when they don't listen on ports 8080 and 3000:
 
 ```
 cd agent
 uv run pytest
+```
+
+A scripted fake plays the LLM by default. `--llm haiku` (or `--llm gemini`) runs the same calls against the real model, with its key from `.env`. Tests that need the fake to force a move a real model wouldn't make are skipped then:
+
+```
+uv run --env-file ../.env pytest --llm haiku
+```
+
+A conversation test opens a `TextCall` with what the fake LLM should do, speaks Caller lines, and checks what the agent said, the tools it called and was offered, the state the call reached, and the FHIR records:
+
+```python
+async with start_call(["What is your full name and date of birth?", verify("Rosalind", "Okonkwo", born)]) as call:
+    await call.say("I'd like to book an appointment.")
+    await call.say("Rosalind Okonkwo, March 3, 1961.")
+    assert call.tool_results("verify_patient") == [{"status": "verified"}]
+    assert call.state == "intent"
 ```
 
 ## Latency baseline

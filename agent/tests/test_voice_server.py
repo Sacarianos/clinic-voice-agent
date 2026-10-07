@@ -4,10 +4,13 @@ from fakes import RecordingTTS, ScriptedLLM, SilentSTT
 from starlette.testclient import TestClient
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
+from clinic_agent.conversation import GREETING
+from clinic_agent.ehr import EhrAdapter
 from clinic_agent.server import create_app
 from clinic_agent.services import VoiceServices
 
-GREETING = "Thanks for calling the clinic. How can I help you today?"
+# Greeting and waiting for the Caller never reach the EHR.
+UNUSED_EHR = EhrAdapter("http://127.0.0.1:9")
 
 
 def _no_services():
@@ -36,7 +39,7 @@ def test_webhook_answers_with_twiml_that_streams_the_call_to_the_websocket():
 
 def test_caller_hears_the_agent_greet_them_as_soon_as_the_call_connects():
     tts = RecordingTTS()
-    app = create_app(lambda: VoiceServices(stt=SilentSTT(), llm=ScriptedLLM([GREETING]), tts=tts))
+    app = create_app(lambda: VoiceServices(stt=SilentSTT(), llm=ScriptedLLM([]), tts=tts, ehr=UNUSED_EHR))
 
     with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
         start_media_stream(twilio)
