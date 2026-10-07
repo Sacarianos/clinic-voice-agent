@@ -11,7 +11,7 @@ import pytest
 from ehr import clinic_time
 from fakes import CallTool
 from faulty_adapter import BOOK, CANCEL, LIST_APPOINTMENTS, RESCHEDULE
-from scripts import spoken, verify
+from scripts import answer_read_back, spoken, verify
 
 pytestmark = pytest.mark.scripted_only
 
@@ -56,6 +56,7 @@ async def booking(ehr, start_call, adapter_url):
             CallTool("find_slots", {"provider": faraday.name}),
             "Dr. Faraday has 9 AM tomorrow. What is the visit for?",
             CallTool("choose_slot", {"slot_id": slot_id, "visit_type": "sick_visit"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
         ],
         adapter_url=adapter_url,
@@ -112,6 +113,7 @@ async def test_a_cancel_that_timed_out_has_one_entry_that_says_re_reading_found_
             verify("Rosalind", "Okonkwo", born),
             CallTool("list_appointments"),
             CallTool("choose_appointment_to_cancel", {"appointment_id": appointment_id}),
+            answer_read_back("yes"),
             CallTool("cancel_appointment"),
         ],
         adapter_url=faulty_adapter.url,
@@ -148,6 +150,7 @@ async def test_a_reschedule_rejected_because_the_new_slot_was_taken_has_one_entr
             CallTool("find_slots", {"provider": faraday.name, "from_date": two_pm.date().isoformat()}),
             "Dr. Faraday has 2 PM that day. Would that work?",
             CallTool("choose_slot", {"slot_id": new_slot}),
+            answer_read_back("yes"),
             CallTool("reschedule_appointment"),
         ],
         adapter_url=faulty_adapter.url,
