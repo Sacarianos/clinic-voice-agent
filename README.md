@@ -37,7 +37,7 @@ It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "s
 
 Errors come back as `{ "error": "<code>" }`: `invalid_request` with 400, `not_found` with 404, `ehr_unavailable` with 502 when HAPI can't be reached or fails. Error bodies never echo the request.
 
-Adapter tests start the adapter on a free port and call it over HTTP against the real HAPI. Each test creates its own Patients, so they pass on the seeded stack and on an empty HAPI alike. Needs Node 24 and pnpm:
+Adapter tests start the adapter on a free port and call it over HTTP against the real HAPI. Each test creates its own Patients and deletes them when its file finishes, so they pass on the seeded stack and on an empty HAPI alike, and the seed tests still find exactly the seeded clinic. Needs Node 24 and pnpm:
 
 ```
 cd adapter

@@ -1,8 +1,9 @@
 // Test-side access to the real HAPI: sets up data before a test and reads FHIR state after it.
 // Tests never stub HAPI. Each test creates the records it needs so it runs the same on a seeded
-// local stack and on the empty HAPI in CI.
+// local stack and on the empty HAPI in CI. Every record a test file creates is deleted after it,
+// because the local stack keeps its data and the seed tests count what the clinic holds.
 
-import type { Bundle, Patient } from "fhir/r4";
+import type { Bundle, FhirResource, Patient } from "fhir/r4";
 
 export const fhirBaseUrl = (process.env.FHIR_BASE_URL ?? "http://localhost:8080/fhir").replace(/\/+$/, "");
 
@@ -16,14 +17,26 @@ async function fhir<T>(method: string, path: string, body?: unknown): Promise<T>
   return (await response.json()) as T;
 }
 
+const createdRecords: string[] = [];
+
+async function create<T extends FhirResource>(resource: T): Promise<string> {
+  const created = await fhir<T>("POST", resource.resourceType, resource);
+  createdRecords.push(`${resource.resourceType}/${created.id}`);
+  return created.id!;
+}
+
+// Newest first, so a record goes before the records it points at.
+export async function deleteCreatedRecords() {
+  while (createdRecords.length > 0) await fhir("DELETE", createdRecords.pop()!);
+}
+
 export async function createPatient(patient: { given: string[]; family: string; birthDate: string }): Promise<string> {
-  const created = await fhir<Patient>("POST", "Patient", {
+  return create<Patient>({
     resourceType: "Patient",
     active: true,
     name: [{ use: "official", family: patient.family, given: patient.given }],
     birthDate: patient.birthDate,
-  } satisfies Patient);
-  return created.id!;
+  });
 }
 
 // A date of birth no Patient has yet, so a test's own Patients are the only candidates for it.
