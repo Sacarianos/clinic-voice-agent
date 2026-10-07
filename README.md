@@ -35,6 +35,14 @@ The agent never talks to FHIR. It calls the adapter in `adapter/`, a small Hono 
 
 It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "status": "ambiguous" }` or `{ "status": "not_verified" }`. The date of birth must match exactly, the surname must sound the same, and the given name must start with the same letter. When several Patients match, an exact surname and then an exact given name narrow them down, so a spelled-out surname like `"S M I T H"` settles an ambiguous match. A not-verified answer never says which part was wrong.
 
+`POST /callback-requests` files a Callback Request as a FHIR Task:
+
+```
+{ "phoneNumber": "+15555550123", "reason": "Caller asked to speak to a person", "emergency": false, "patientId": "..." }
+```
+
+`patientId` is optional and links the Task to the Patient. It answers 201 with `{ "callbackRequestId": "..." }`. The number and the emergency flag are labelled inputs on the Task (`callback phone number`, `emergency`), and an emergency Task has priority `stat`.
+
 Errors come back as `{ "error": "<code>" }`: `invalid_request` with 400, `not_found` with 404, `ehr_unavailable` with 502 when HAPI can't be reached or fails. Error bodies never echo the request.
 
 Adapter tests start the adapter on a free port and call it over HTTP against the real HAPI. Each test creates its own Patients and deletes them when its file finishes, so they pass on the seeded stack and on an empty HAPI alike, and the seed tests still find exactly the seeded clinic. Needs Node 24 and pnpm:
@@ -53,6 +61,8 @@ Copy `.env.example` to `.env` for the API keys later tickets need.
 The voice server lives in `agent/`. Twilio posts each incoming call to `POST /voice`, which answers with TwiML that opens a media stream to `WS /ws`. Every call runs its own Pipecat pipeline: Silero VAD, Deepgram Nova-3, the configured LLM, and Deepgram Aura-2.
 
 The conversation is a `pipecat.flows` state machine in `agent/src/clinic_agent/conversation.py`. The agent greets the Caller and runs Identity Verification through the adapter before anything else. A name that matches several Patients gets a request to spell the last name. A failed attempt gets the same failure message whatever didn't match, and a second one ends the call with a Handoff message. Once verified, the call moves on to Intent. Each state offers the LLM only its own tools, so nothing past verification can be reached before it (see [ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md)). The server needs the local EHR stack running and reaches the adapter at `EHR_ADAPTER_URL`, `http://localhost:3000` by default.
+
+A Handoff files a Callback Request through the adapter and tells the Caller staff will call back. It fires on a request for a person, a Proxy Caller, a new patient, a clinical question, and a second failed verification. An emergency mention triggers an Emergency Redirect from any state, before or after verification: the agent says to hang up and dial 911, files an emergency Callback Request and ends the call. Both tools are offered in every node as flow-wide functions, as is `get_clinic_info`, which answers Clinic Questions from the static config in `clinic.py`. If a Callback Request can't be saved, the Caller is told so instead of being promised a callback. The number it calls back comes from Twilio's `From`: `/voice` passes it to the media stream as a `from_number` stream parameter. It is never used to verify anyone.
 
 You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 4.5 and `ANTHROPIC_API_KEY`. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. With `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` set, the agent can hang up calls itself. With both Langfuse keys set, every call is traced to Langfuse Cloud.
 
