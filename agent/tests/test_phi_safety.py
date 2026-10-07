@@ -89,8 +89,17 @@ def logs():
     logging.root.handlers[:], logging.root.level = root_handlers, root_level
 
 
-async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_patient_data_in_the_logs(
-    ehr, start_call, patient, logs
+def exported_traces(langfuse, conversation_id: str) -> str:
+    """Every byte sent to Langfuse so far, once this call's conversation has been exported.
+
+    OTLP carries strings as raw UTF-8, so a name in any span shows up in the bytes as it is.
+    """
+    langfuse.wait_for_span("conversation", conversation_id)
+    return "\n".join(body.decode("utf-8", errors="replace") for _, _, body in langfuse.exports)
+
+
+async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_patient_data_in_logs_or_traces(
+    ehr, start_call, patient, logs, langfuse
 ):
     faraday = ehr.create_provider(given="Imogen", family="Faraday")
     nine = clinic_time(1, "09:00")
@@ -108,6 +117,7 @@ async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_pa
             handoff("asked_for_person"),
         ],
         caller_phone=patient.phone,
+        tracing=True,
     ) as call:
         await call.converse(
             [
@@ -123,4 +133,7 @@ async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_pa
         assert call.tool_results("book_appointment") == [{"outcome": "succeeded"}]
         assert call.ended
 
+    traces = exported_traces(langfuse, call.conversation_id)
+    assert "Dr. Imogen Faraday" in traces  # the conversation is in the trace, with patient data masked
+    assert found_phi(patient, traces) == []
     assert found_phi(patient, logs.getvalue()) == []
