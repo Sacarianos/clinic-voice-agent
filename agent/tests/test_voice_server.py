@@ -12,6 +12,7 @@ from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, sta
 from clinic_agent.config import ConfigError
 from clinic_agent.conversation import GREETING
 from clinic_agent.ehr import EhrAdapter
+from clinic_agent.phi import PHI
 from clinic_agent.server import TwilioAccount, app_from_env, create_app
 from clinic_agent.services import VoiceServices
 
@@ -143,6 +144,17 @@ def test_caller_hears_the_agent_greet_them_as_soon_as_the_call_connects():
     assert audio["streamSid"] == STREAM_SID
     assert audio["media"]["payload"]
     assert " ".join(sentence.strip() for sentence in tts.spoken) == GREETING
+
+
+def test_a_phone_call_without_caller_id_never_teaches_the_mask_a_placeholder_phone_number():
+    app = _app(lambda: VoiceServices(stt=SilentSTT(), llm=ScriptedLLM([]), tts=RecordingTTS(), ehr=UNUSED_EHR))
+
+    with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
+        start_media_stream(twilio, from_number=None)
+        next_media_message(twilio)
+        hang_up(twilio, app)
+
+    assert PHI.mask("The write outcome was unknown.") == "The write outcome was unknown."
 
 
 def test_a_callback_request_filed_on_a_phone_call_has_the_number_twilio_passed_as_a_stream_parameter(

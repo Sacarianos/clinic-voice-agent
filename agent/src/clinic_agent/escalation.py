@@ -2,8 +2,15 @@
 
 Both are offered in every conversation node, through the flow's global functions, so a Caller can
 reach them before Identity Verification and from any state after it.
+
+A Callback Request calls back the call's caller ID. A call without one, such as a browser call, asks
+the Caller for a number instead. A Handoff reads that number back and files only once the Caller says
+it is right. An Emergency Redirect says the 911 line first and only then asks, and files the number at
+once, so a Caller in an emergency is never held up. Nothing is ever filed without a real number.
 """
 
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import httpx
@@ -14,6 +21,7 @@ from pipecat.frames.frames import TTSSpeakFrame
 from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.holding import with_holding_line
+from clinic_agent.phi import PHI, PHONE
 from clinic_agent.timeouts import tool_timeout
 
 
@@ -46,6 +54,32 @@ HANDOFF_REASONS = {
 EMERGENCY_REASON = "Emergency: caller described an emergency and was told to hang up and dial 911"
 EMERGENCY_REDIRECT = "This sounds like an emergency. Please hang up now and dial 911."
 
+ASK_FOR_CALLBACK_NUMBER = "Before I let you go, what's the best phone number for our staff to call you back on?"
+ASK_FOR_CALLBACK_NUMBER_AGAIN = "Sorry about that. What's the best number to reach you?"
+# Said right after the 911 line. Giving a number is optional and never stands between the Caller and 911.
+EMERGENCY_ASK_FOR_CALLBACK_NUMBER = (
+    "If you can, tell me a phone number where our staff can reach you later. If not, please hang up and dial 911 now."
+)
+EMERGENCY_GOODBYE = "Thank you. Please hang up now and dial 911. Goodbye."
+NOT_A_PHONE_NUMBER = "That is not a 10-digit phone number. Ask for it again."
+
+CALLBACK_NUMBER_TASK = """\
+This call shows no phone number, so the clinic has no number to call the caller back on. You asked for one.
+When the caller says it, call record_callback_number with its digits, such as 5555550123. Don't read it
+back yourself: the tool does. If they ask something else, answer briefly and ask for the number again.
+"""
+
+CONFIRM_CALLBACK_NUMBER_TASK = """\
+You just read back the caller's phone number and asked if it is right. Call confirm_callback_number with
+correct true when they clearly say yes, and false when they say no or give a different number.
+"""
+
+EMERGENCY_CALLBACK_NUMBER_TASK = """\
+The caller described an emergency and was told to hang up and dial 911. You then asked, only if they can,
+for a number where staff can reach them later. If they say one, call record_callback_number with its
+digits at once, without reading it back. Otherwise tell them again to hang up and dial 911. Ask nothing else.
+"""
+
 # Said only when the Callback Request could not be saved, so the Caller is never told a callback is coming when it isn't.
 COULD_NOT_FILE_CALLBACK_REQUEST = (
     "I'm sorry, I wasn't able to save your request. Please call us again in a few minutes. Goodbye."
@@ -66,17 +100,125 @@ def escalation_tools(ehr: EhrAdapter) -> list[FlowsFunctionSchema]:
     return [_handoff_tool(ehr), _emergency_redirect_tool(ehr)]
 
 
+def set_callback_number(flow_manager: FlowManager, phone_number: str) -> None:
+    """The number a Callback Request on this call calls back: the caller ID, or one the Caller gave."""
+    flow_manager.state["callback_number"] = phone_number
+    PHI.learn(phone_number, PHONE)
+
+
 async def handoff(ehr: EhrAdapter, flow_manager: FlowManager, reason: HandoffReason) -> NodeConfig:
-    """Files the Callback Request, then returns the node that tells the Caller staff will call and hangs up."""
+    """Files the Callback Request, then returns the node that tells the Caller staff will call and hangs up.
+
+    Without a number to call back, it returns the node that asks for one and files once it is confirmed.
+    """
+    if "callback_number" not in flow_manager.state:
+        return _callback_number_node(ehr, reason, ASK_FOR_CALLBACK_NUMBER)
     filed = await _file_callback_request(ehr, flow_manager, reason.filed_as, emergency=False)
     return _closing_node("handoff", reason.told_to_caller if filed else COULD_NOT_FILE_CALLBACK_REQUEST)
 
 
 async def emergency_redirect(ehr: EhrAdapter, flow_manager: FlowManager) -> NodeConfig:
-    """Tells the Caller to dial 911 first, files an emergency Callback Request, and returns the node that hangs up."""
+    """Tells the Caller to dial 911 first, files an emergency Callback Request, and returns the node that hangs up.
+
+    Without a number to call back, it asks for one after the 911 line and files it as soon as it is given.
+    """
     await flow_manager.worker.queue_frame(TTSSpeakFrame(EMERGENCY_REDIRECT))
+    if "callback_number" not in flow_manager.state:
+        return _emergency_callback_number_node(ehr)
     await _file_callback_request(ehr, flow_manager, EMERGENCY_REASON, emergency=True)
     return _closing_node("emergency_redirect", None)
+
+
+def callback_number(said: str) -> str | None:
+    """A US phone number in E.164 form, or None when the digits aren't one."""
+    digits = re.sub(r"\D", "", said)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    # A US area code never starts with 0 or 1.
+    if len(digits) != 10 or digits[0] in "01":
+        return None
+    return f"+1{digits}"
+
+
+def _spoken(phone_number: str) -> str:
+    digits = phone_number.removeprefix("+1")
+    return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+
+
+def _callback_number_node(ehr: EhrAdapter, reason: HandoffReason, line: str) -> NodeConfig:
+    async def read_back(phone_number: str, flow_manager: FlowManager) -> NodeConfig:
+        return _confirm_callback_number_node(ehr, reason, phone_number)
+
+    return {
+        "name": "callback_number",
+        "pre_actions": [{"type": "tts_say", "text": line}],
+        "task_messages": [{"role": "developer", "content": CALLBACK_NUMBER_TASK}],
+        "functions": [_record_callback_number_tool(read_back)],
+        "respond_immediately": False,
+    }
+
+
+def _confirm_callback_number_node(ehr: EhrAdapter, reason: HandoffReason, phone_number: str) -> NodeConfig:
+    async def confirm_callback_number(args: dict, flow_manager: FlowManager):
+        correct = args.get("correct")
+        if not isinstance(correct, bool):
+            return {"status": "error", "error": "correct must be true or false"}, None
+        if not correct:
+            return {"status": "asking_again"}, _callback_number_node(ehr, reason, ASK_FOR_CALLBACK_NUMBER_AGAIN)
+        set_callback_number(flow_manager, phone_number)
+        return {"status": "confirmed"}, await handoff(ehr, flow_manager, reason)
+
+    confirm_tool = FlowsFunctionSchema(
+        name="confirm_callback_number",
+        description="Record whether the caller said the phone number you just read back is right.",
+        properties={"correct": {"type": "boolean", "description": "True only when the caller clearly said yes"}},
+        required=["correct"],
+        handler=with_holding_line(confirm_callback_number),
+        cancel_on_interruption=False,
+        timeout_secs=FILING_TIMEOUT_SECS,
+    )
+    return {
+        "name": "confirm_callback_number",
+        "pre_actions": [{"type": "tts_say", "text": f"I have {_spoken(phone_number)}. Is that right?"}],
+        "task_messages": [{"role": "developer", "content": CONFIRM_CALLBACK_NUMBER_TASK}],
+        "functions": [confirm_tool],
+        "respond_immediately": False,
+    }
+
+
+def _emergency_callback_number_node(ehr: EhrAdapter) -> NodeConfig:
+    async def file_at_once(phone_number: str, flow_manager: FlowManager) -> NodeConfig:
+        set_callback_number(flow_manager, phone_number)
+        await _file_callback_request(ehr, flow_manager, EMERGENCY_REASON, emergency=True)
+        return _closing_node("emergency_redirect", EMERGENCY_GOODBYE)
+
+    return {
+        "name": "emergency_callback_number",
+        "pre_actions": [{"type": "tts_say", "text": EMERGENCY_ASK_FOR_CALLBACK_NUMBER}],
+        "task_messages": [{"role": "developer", "content": EMERGENCY_CALLBACK_NUMBER_TASK}],
+        "functions": [_record_callback_number_tool(file_at_once, timeout_secs=FILING_TIMEOUT_SECS)],
+        "respond_immediately": False,
+    }
+
+
+def _record_callback_number_tool(
+    then: Callable[[str, FlowManager], Awaitable[NodeConfig]], *, timeout_secs: float | None = None
+) -> FlowsFunctionSchema:
+    async def record_callback_number(args: dict, flow_manager: FlowManager):
+        phone_number = callback_number(str(args.get("phone_number", "")))
+        if phone_number is None:
+            return {"status": "error", "error": NOT_A_PHONE_NUMBER}, None
+        return {"status": "recorded"}, await then(phone_number, flow_manager)
+
+    return FlowsFunctionSchema(
+        name="record_callback_number",
+        description="Record the phone number the caller gave for staff to call them back on.",
+        properties={"phone_number": {"type": "string", "description": "The number's digits, such as 5555550123"}},
+        required=["phone_number"],
+        handler=with_holding_line(record_callback_number),
+        cancel_on_interruption=False,
+        timeout_secs=timeout_secs,
+    )
 
 
 def _closing_node(name: str, goodbye: str | None) -> NodeConfig:
@@ -144,7 +286,7 @@ async def _file_callback_request(ehr: EhrAdapter, flow_manager: FlowManager, rea
         outcome, error = "error", None
         try:
             await ehr.create_callback_request(
-                phone_number=flow_manager.state["caller_phone"],
+                phone_number=flow_manager.state["callback_number"],
                 reason=reason,
                 emergency=emergency,
                 patient_id=patient_id,

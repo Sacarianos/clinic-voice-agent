@@ -33,7 +33,6 @@ from clinic_agent.tracing import configure_tracing
 # Twilio Media Streams carry 8 kHz mu-law. The serializer converts to and from PCM at this rate.
 PHONE_SAMPLE_RATE = 8000
 DEFAULT_PORT = 8765
-UNKNOWN_CALLER_PHONE = "unknown"
 
 
 @dataclass(frozen=True)
@@ -140,7 +139,7 @@ def _add_phone_routes(
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
             starting.append(asyncio.current_task())
-            await start_conversation(call, services.ehr, call_data.from_number or UNKNOWN_CALLER_PHONE)
+            await start_conversation(call, services.ehr, call_data.from_number or None)
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

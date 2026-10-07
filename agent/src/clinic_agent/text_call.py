@@ -62,6 +62,8 @@ class ToolCall:
 class TextCall:
     """Use as `async with TextCall(llm, ehr, caller_phone=...) as call:`. Entering waits for the agent's greeting.
 
+    caller_phone is the caller ID a phone call would carry. None plays a call without one, like a browser call.
+
     With tracing on, the call is traced like a phone call, as one conversation keyed by `conversation_id`.
     """
 
@@ -70,7 +72,7 @@ class TextCall:
         llm: LLMService,
         ehr: EhrAdapter,
         *,
-        caller_phone: str,
+        caller_phone: str | None,
         reply_timeout_secs: float = 10,
         tracing: bool = False,
     ):
