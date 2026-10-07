@@ -1,0 +1,29 @@
+[project]
+name = "clinic-agent"
+version = "0.1.0"
+description = "Voice server and conversation for the clinic phone agent."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "pipecat-ai[anthropic,deepgram,openrouter,silero,tracing,websocket]==1.12.0",
+    "python-multipart>=0.0.32",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+clinic-voice-server = "clinic_agent.server:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
