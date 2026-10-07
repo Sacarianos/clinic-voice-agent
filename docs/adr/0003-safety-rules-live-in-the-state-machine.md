@@ -1,0 +1,3 @@
+# Safety rules live in the state machine, not the prompt
+
+Three rules are enforced by code in the conversation state machine: no patient data and no scheduling tools before Identity Verification, no write without a Read-back and a clear yes, and no claim of success unless the write returned success. Each state only exposes its own tools, so the LLM can't call a booking tool before verification no matter what the caller says. Prompts still describe the rules, but a prompt is a request and a missing tool is a guarantee. The cost is a more rigid conversation: a caller who opens with "move my Tuesday appointment" still has to verify before the agent can even look it up.
