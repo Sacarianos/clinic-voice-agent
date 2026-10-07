@@ -78,10 +78,12 @@ A write that lands only in part is safe and can be finished. Each write takes it
 
 Fault injection makes HAPI misbehave on purpose. Send `x-inject-fault: <fault>` on any request, or set `INJECT_FAULT=<fault>` to apply it to every request:
 
-- `timeout`: HAPI applies each write but answers after the FHIR timeout. Writes answer `unknown`, and the write is in FHIR.
+- `timeout`: HAPI applies each write but answers only after the adapter's deadline. Writes answer `unknown`, and the write is in FHIR by then.
 - `server_error`: HAPI answers every request with a 500 and applies nothing. Writes answer `failed`, reads `ehr_unavailable`.
 - `slot_taken`: someone else takes the Slot just before a Book or Reschedule commits. They answer `rejected` with `slot_taken`. Cancel takes no Slot and is unaffected.
 - `half_write`: HAPI applies only the first half of a write's transaction and the connection drops. Writes answer `unknown`. Sending the same write again finishes it.
+- `stalled_write`: HAPI sits on each write until the adapter's deadline passes, then applies it 3 s later if it still applies. Writes answer `unknown`, and nothing is in FHIR until after that answer.
+- `slow`: HAPI answers every request 2 s late, reads included. One FHIR call still fits within the deadline, so a call hears the holding line and the request succeeds.
 
 An unknown fault name gets 400 `invalid_request`.
 

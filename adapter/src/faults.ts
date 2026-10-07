@@ -13,13 +13,17 @@
 // - stalled_write: the EHR sits on each write until the adapter gives up on it, then applies it
 //   STALLED_WRITE_LANDS_AFTER_MS later, if it still applies. Writes come back unknown, and nothing
 //   is written until well after the adapter answered.
+// - slow: the EHR takes SLOW_EHR_DELAY_MS longer to answer every request, reads included. One FHIR
+//   call still fits within the adapter's deadline, so the agent's holding line plays but the
+//   request succeeds.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Bundle, FhirResource, OperationOutcome, Slot } from "fhir/r4";
 import type { MiddlewareHandler } from "hono";
 import { freed } from "./scheduling/slot-holds.ts";
 
-export const FAULTS = ["timeout", "server_error", "slot_taken", "half_write", "stalled_write"] as const;
+export const FAULTS = ["timeout", "server_error", "slot_taken", "half_write", "stalled_write", "slow"] as const;
 export type Fault = (typeof FAULTS)[number];
 
 export const FAULT_HEADER = "x-inject-fault";
@@ -27,6 +31,7 @@ export const FAULT_HEADER = "x-inject-fault";
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export const STALLED_WRITE_LANDS_AFTER_MS = 3_000;
+export const SLOW_EHR_DELAY_MS = 2_000;
 
 const currentFault = new AsyncLocalStorage<Fault>();
 
@@ -48,6 +53,7 @@ export const fetchWithFaults: Fetch = async (url, init) => {
   const fault = currentFault.getStore();
   const isWrite = init.method !== "GET";
   if (fault === "server_error") return serverError();
+  if (fault === "slow") await sleep(SLOW_EHR_DELAY_MS, undefined, { signal: init.signal! });
   if (fault === "timeout" && isWrite) return answerTooLate(url, init);
   if (fault === "stalled_write" && isWrite) return applyAfterGivingUp(url, init);
   const transaction = isWrite ? transactionIn(init) : undefined;

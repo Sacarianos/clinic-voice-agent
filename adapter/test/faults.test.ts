@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { SLOW_EHR_DELAY_MS } from "../src/faults.ts";
 import { startAdapter, type Adapter } from "./support/adapter.ts";
 import {
   appointmentsInSlot,
@@ -91,6 +92,18 @@ describe("timeout", () => {
     } finally {
       await impatient.close();
     }
+  });
+});
+
+describe("slow", () => {
+  test("makes the EHR answer late, but still within the deadline", async () => {
+    const started = Date.now();
+
+    const response = await adapter.get("/providers", {}, withFault("slow"));
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(SLOW_EHR_DELAY_MS);
+    expect(response.status).toBe(200);
+    expect(response.body.providers.length).toBeGreaterThan(0);
   });
 });
 
