@@ -2,9 +2,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { FhirClient } from "../fhir/client.ts";
 import { validJson, validQuery } from "../http.ts";
-import { book, VISIT_TYPES, type VisitType } from "./book.ts";
+import { listAppointments, VISIT_TYPES, type VisitType } from "./appointments.ts";
+import { book } from "./book.ts";
+import { cancel } from "./cancel.ts";
 import { findSlots } from "./find-slots.ts";
 import { loadProviders } from "./providers.ts";
+import { reschedule } from "./reschedule.ts";
 
 export function providerRoutes(fhir: FhirClient) {
   return new Hono().get("/", async (c) => {
@@ -36,6 +39,29 @@ const bookBody = z.object({
   idempotencyKey: z.string().min(8).max(64),
 });
 
+const listAppointmentsQuery = z.object({ patientId: z.string().min(1) });
+
+const rescheduleBody = z.object({
+  patientId: z.string().min(1),
+  slotId: z.string().min(1),
+  idempotencyKey: z.string().min(8).max(64),
+});
+
+const cancelBody = z.object({
+  patientId: z.string().min(1),
+  idempotencyKey: z.string().min(8).max(64),
+});
+
 export function appointmentRoutes(fhir: FhirClient) {
-  return new Hono().post("/", validJson(bookBody), async (c) => c.json(await book(fhir, c.req.valid("json"), new Date())));
+  return new Hono()
+    .get("/", validQuery(listAppointmentsQuery), async (c) =>
+      c.json({ appointments: await listAppointments(fhir, c.req.valid("query").patientId, new Date()) }),
+    )
+    .post("/", validJson(bookBody), async (c) => c.json(await book(fhir, c.req.valid("json"), new Date())))
+    .post("/:appointmentId/reschedule", validJson(rescheduleBody), async (c) =>
+      c.json(await reschedule(fhir, { ...c.req.valid("json"), appointmentId: c.req.param("appointmentId") }, new Date())),
+    )
+    .post("/:appointmentId/cancel", validJson(cancelBody), async (c) =>
+      c.json(await cancel(fhir, { ...c.req.valid("json"), appointmentId: c.req.param("appointmentId") }, new Date())),
+    );
 }

@@ -11,6 +11,7 @@ export const fhirBaseUrl = (process.env.FHIR_BASE_URL ?? "http://localhost:8080/
 const CLINIC_TIMEZONE = "America/New_York";
 const PROVIDER_SYSTEM = "https://clinic.example/fhir/identifier/provider";
 const IDEMPOTENCY_KEY_SYSTEM = "https://clinic.example/fhir/identifier/idempotency-key";
+const VISIT_TYPE_SYSTEM = "https://clinic.example/fhir/CodeSystem/visit-type";
 
 async function fhir<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${fhirBaseUrl}/${path}`, {
@@ -105,7 +106,29 @@ export async function createSlot(provider: TestProvider, start: string, status: 
   });
 }
 
+// An Appointment written straight into HAPI, for states the adapter won't create, such as one in the
+// past. It takes the Slot as it is. deleteCreatedRecords finds it through its Slot, so it isn't listed.
+export async function createAppointment(
+  patientId: string,
+  slotId: string,
+  status: Appointment["status"] = "booked",
+): Promise<string> {
+  const slot = await readSlot(slotId);
+  const created = await fhir<Appointment>("POST", "Appointment", {
+    resourceType: "Appointment",
+    status,
+    appointmentType: { coding: [{ system: VISIT_TYPE_SYSTEM, code: "follow_up" }], text: "Follow-up" },
+    slot: [{ reference: `Slot/${slotId}` }],
+    start: slot.start,
+    end: slot.end,
+    participant: [{ actor: { reference: `Patient/${patientId}` }, status: "accepted" }],
+  } satisfies Appointment);
+  return created.id!;
+}
+
 export const readSlot = (slotId: string) => fhir<Slot>("GET", `Slot/${slotId}`);
+
+export const readAppointment = (appointmentId: string) => fhir<Appointment>("GET", `Appointment/${appointmentId}`);
 
 export const appointmentsInSlot = (slotId: string) => search<Appointment>(`Appointment?slot=Slot/${slotId}`);
 
