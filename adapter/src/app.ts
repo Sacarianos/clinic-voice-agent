@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { Config } from "./config.ts";
 import { createFhirClient, EhrUnavailableError } from "./fhir/client.ts";
 import { patientRoutes } from "./patients/routes.ts";
@@ -20,6 +21,8 @@ export function createApp(config: Config) {
       // Only the error's own message is logged. It never includes request bodies.
       console.error(`${c.req.method} ${c.req.path}: ${error.name}: ${error.message}`);
       if (error instanceof EhrUnavailableError) return c.json({ error: "ehr_unavailable" }, 502);
+      // Hono's validators throw a 400 for a body that isn't JSON at all.
+      if (error instanceof HTTPException && error.status === 400) return c.json({ error: "invalid_request" }, 400);
       return c.json({ error: "internal_error" }, 500);
     });
 }
