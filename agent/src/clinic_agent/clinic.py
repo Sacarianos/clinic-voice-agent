@@ -5,6 +5,8 @@ The Providers match the seeded ones in fhir/src/clinic_seed/clinic.py. What each
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema
 
+PROVIDER_NAMES = ["Marcus Whitfield", "Wojciech Szczepanski", "Siobhan Kowalczyk"]
+
 CLINIC_INFO = {
     "hours": "Open Monday through Friday, 8 AM to 5 PM Eastern. Closed on weekends and holidays.",
     "address": "1420 Cedar Hollow Road, Suite 200, Maple Ridge. It is the brick building next to the pharmacy.",

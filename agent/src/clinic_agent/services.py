@@ -9,6 +9,7 @@ from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.llm_service import LLMService
 from pipecat.transcriptions.language import Language
 
+from clinic_agent.clinic import PROVIDER_NAMES
 from clinic_agent.config import require
 from clinic_agent.conversation import ROLE
 from clinic_agent.ehr import DEFAULT_EHR_ADAPTER_URL, EhrAdapter
@@ -34,7 +35,9 @@ def phone_services(env: Mapping[str, str]) -> Callable[[], VoiceServices]:
             stt=DeepgramSTTService(
                 api_key=deepgram_key,
                 mip_opt_out=True,  # keep call audio out of Deepgram's model-improvement program
-                settings=DeepgramSTTService.Settings(model="nova-3-general", language=Language.EN),
+                settings=DeepgramSTTService.Settings(
+                    model="nova-3-general", language=Language.EN, keyterm=_provider_keyterms()
+                ),
             ),
             llm=create_llm(env, system_instruction=ROLE),
             tts=DeepgramTTSService(
@@ -45,3 +48,8 @@ def phone_services(env: Mapping[str, str]) -> Callable[[], VoiceServices]:
         )
 
     return make_services
+
+
+def _provider_keyterms() -> list[str]:
+    """Each Provider's full name and surname, so Nova-3 hears "Dr. Szczepanski" as well as the full name."""
+    return [*PROVIDER_NAMES, *(name.split()[-1] for name in PROVIDER_NAMES)]
