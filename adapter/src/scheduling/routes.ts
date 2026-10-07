@@ -4,6 +4,14 @@ import type { FhirClient } from "../fhir/client.ts";
 import { validJson, validQuery } from "../http.ts";
 import { book, VISIT_TYPES, type VisitType } from "./book.ts";
 import { findSlots } from "./find-slots.ts";
+import { loadProviders } from "./providers.ts";
+
+export function providerRoutes(fhir: FhirClient) {
+  return new Hono().get("/", async (c) => {
+    const { all } = await loadProviders(fhir);
+    return c.json({ providers: all.map(({ providerId, providerName }) => ({ providerId, providerName })) });
+  });
+}
 
 const findSlotsQuery = z.object({
   providerId: z.string().min(1).optional(),

@@ -7,6 +7,7 @@ import type { FhirClient } from "../fhir/client.ts";
 export type Provider = { providerId: string; providerName: string; practitionerId: string };
 
 export type Providers = {
+  all: Provider[];
   bySchedule: Map<string, Provider>;
   schedulesOf(providerId: string): string[];
 };
@@ -36,6 +37,7 @@ export async function loadProviders(fhir: FhirClient): Promise<Providers> {
   }
 
   return {
+    all: [...new Map([...bySchedule.values()].map((provider) => [provider.providerId, provider])).values()],
     bySchedule,
     schedulesOf: (providerId) =>
       [...bySchedule].filter(([, provider]) => provider.providerId === providerId).map(([scheduleId]) => scheduleId),
