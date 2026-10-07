@@ -4,6 +4,7 @@ import type { FhirClient } from "../fhir/client.ts";
 import { validJson, validQuery } from "../http.ts";
 import { listAppointments, VISIT_TYPES, type VisitType } from "./appointments.ts";
 import { book } from "./book.ts";
+import { cancel } from "./cancel.ts";
 import { findSlots } from "./find-slots.ts";
 import { loadProviders } from "./providers.ts";
 
@@ -39,10 +40,18 @@ const bookBody = z.object({
 
 const listAppointmentsQuery = z.object({ patientId: z.string().min(1) });
 
+const cancelBody = z.object({
+  patientId: z.string().min(1),
+  idempotencyKey: z.string().min(8).max(64),
+});
+
 export function appointmentRoutes(fhir: FhirClient) {
   return new Hono()
     .get("/", validQuery(listAppointmentsQuery), async (c) =>
       c.json({ appointments: await listAppointments(fhir, c.req.valid("query").patientId, new Date()) }),
     )
-    .post("/", validJson(bookBody), async (c) => c.json(await book(fhir, c.req.valid("json"), new Date())));
+    .post("/", validJson(bookBody), async (c) => c.json(await book(fhir, c.req.valid("json"), new Date())))
+    .post("/:appointmentId/cancel", validJson(cancelBody), async (c) =>
+      c.json(await cancel(fhir, { ...c.req.valid("json"), appointmentId: c.req.param("appointmentId") }, new Date())),
+    );
 }

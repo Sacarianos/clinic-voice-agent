@@ -45,6 +45,19 @@ export async function listAppointments(fhir: FhirClient, patientId: string, now:
     .map((appointment) => appointmentDetails(appointment, slots.get(slotIdOf(appointment))!, providers));
 }
 
+// The Patient's Appointment with this id. Undefined when there is none, or it is someone else's.
+export async function readPatientsAppointment(
+  fhir: FhirClient,
+  patientId: string,
+  appointmentId: string,
+): Promise<Appointment | undefined> {
+  const appointment = await fhir.read<Appointment>("Appointment", appointmentId);
+  const isPatients = appointment?.participant.some(
+    (participant) => participant.actor?.reference === `Patient/${patientId}`,
+  );
+  return isPatients ? appointment : undefined;
+}
+
 export function appointmentDetails(appointment: Appointment, slot: Slot, providers: Providers): AppointmentDetails {
   const provider = providers.bySchedule.get(scheduleIdOf(slot))!;
   const patient = appointment.participant.find((participant) => participant.actor?.reference?.startsWith("Patient/"));
