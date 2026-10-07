@@ -74,6 +74,24 @@ describe("Cancel", () => {
     expect((await readSlot(slotId)).status).toBe("free");
   });
 
+  test("cancelling again after someone else booked the freed Slot leaves their booking alone", async () => {
+    const { slotId, appointmentId } = await booked(clinicTime(1, "12:00"));
+    await cancel(appointmentId);
+    const otherPatientId = await createPatient({ given: ["Theodora"], family: "Abernathy", birthDate: await unusedBirthDate() });
+    const theirs = await adapter.post("/appointments", {
+      patientId: otherPatientId,
+      slotId,
+      visitType: "follow_up",
+      idempotencyKey: randomUUID(),
+    });
+
+    const again = await cancel(appointmentId);
+
+    expect(again.body.outcome).toBe("succeeded");
+    expect((await readSlot(slotId)).status).toBe("busy");
+    expect((await readAppointment(theirs.body.appointment.appointmentId)).status).toBe("booked");
+  });
+
   test("concurrent Cancels of the same Appointment all succeed", async () => {
     const { slotId, appointmentId } = await booked(clinicTime(1, "10:30"));
 

@@ -29,6 +29,8 @@ export async function startHeldEhr(): Promise<HeldEhr> {
       holdNext = false;
       holding();
       await released;
+      // The adapter gave up waiting, so the held write never reaches the EHR.
+      if (request.socket.destroyed) return;
     }
     const answer = await fetch(isTransaction ? fhirBaseUrl : `${fhirBaseUrl}${request.url}`, {
       method: request.method,

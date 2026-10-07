@@ -58,6 +58,16 @@ export async function findSlots(fhir: FhirClient, request: FindSlotsRequest, now
   return { status: "found", slots, bookingWindowLastDay: window.lastDay };
 }
 
+export type SlotState = OfferedSlot & { status: "free" | "busy" };
+
+// One Slot as it stands now, for checking what a write did. Undefined when it isn't a Provider's Slot.
+export async function readSlot(fhir: FhirClient, slotId: string): Promise<SlotState | undefined> {
+  const slot = await fhir.read<Slot>("Slot", slotId);
+  const provider = slot && (await loadProviders(fhir)).bySchedule.get(slot.schedule.reference?.slice("Schedule/".length) ?? "");
+  if (!slot || !provider) return undefined;
+  return { ...offeredSlot(slot, provider), status: slot.status === "free" ? "free" : "busy" };
+}
+
 export function offeredSlot(slot: Slot, provider: Provider): OfferedSlot {
   return {
     slotId: slot.id!,

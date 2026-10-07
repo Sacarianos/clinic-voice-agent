@@ -5,7 +5,7 @@ import { validJson, validQuery } from "../http.ts";
 import { listAppointments, VISIT_TYPES, type VisitType } from "./appointments.ts";
 import { book } from "./book.ts";
 import { cancel } from "./cancel.ts";
-import { findSlots } from "./find-slots.ts";
+import { findSlots, readSlot } from "./find-slots.ts";
 import { loadProviders } from "./providers.ts";
 import { reschedule } from "./reschedule.ts";
 
@@ -25,11 +25,16 @@ const findSlotsQuery = z.object({
 });
 
 export function slotRoutes(fhir: FhirClient) {
-  return new Hono().get("/", validQuery(findSlotsQuery), async (c) => {
-    const result = await findSlots(fhir, c.req.valid("query"), new Date());
-    if (result.status === "unknown_provider") return c.json({ error: "unknown_provider" }, 400);
-    return c.json({ slots: result.slots, bookingWindowLastDay: result.bookingWindowLastDay });
-  });
+  return new Hono()
+    .get("/", validQuery(findSlotsQuery), async (c) => {
+      const result = await findSlots(fhir, c.req.valid("query"), new Date());
+      if (result.status === "unknown_provider") return c.json({ error: "unknown_provider" }, 400);
+      return c.json({ slots: result.slots, bookingWindowLastDay: result.bookingWindowLastDay });
+    })
+    .get("/:slotId", async (c) => {
+      const slot = await readSlot(fhir, c.req.param("slotId"));
+      return slot ? c.json({ slot }) : c.json({ error: "slot_not_found" }, 404);
+    });
 }
 
 const bookBody = z.object({

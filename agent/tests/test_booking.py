@@ -10,6 +10,26 @@ def spoken_day(when) -> str:
     return f"{when:%A}, {when:%B} {when.day}"
 
 
+@pytest.mark.parametrize(
+    "caller_says",
+    [
+        "I need to see someone, I've been feeling sick.",
+        "I've had a fever since Monday and I'd like to come in.",
+        "My throat really hurts. Can I get an appointment this week?",
+    ],
+)
+async def test_feeling_unwell_and_wanting_to_be_seen_is_a_booking_not_a_clinical_question(ehr, start_call, caller_says):
+    async with start_call(
+        ["Sorry to hear that. I can help you book a visit. What is your full name and date of birth?"]
+    ) as call:
+        await call.say(caller_says)
+
+        assert call.tool_results("handoff") == []
+        assert ehr.callback_requests_from(call.caller_phone) == []
+        assert call.state == "verify_identity"
+        assert not call.ended
+
+
 async def test_a_verified_patient_books_a_slot_after_a_read_back_and_a_yes(ehr, start_call):
     born = ehr.unused_birth_date()
     patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
@@ -191,7 +211,7 @@ async def test_a_slot_taken_before_the_yes_is_not_claimed_as_booked_and_new_slot
         [rejected] = call.tool_results("book_appointment")
         assert rejected["outcome"] == "rejected"
         assert [slot["time"] for slot in rejected["slots"]] == [f"{spoken_day(clinic_time(1, '10:00'))} at 10 AM"]
-        assert reply.startswith("I'm sorry, that time was just taken.")
+        assert "I'm sorry, that time was just taken." in reply  # a slow EHR adds the holding line first
         assert "booked" not in reply
         assert call.state == "find_slot"
         assert ehr.appointments_of(patient_id) == []
