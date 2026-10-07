@@ -15,10 +15,12 @@ ANSWERS = ("yes", "no", "change")
 
 READ_BACK_TASK = """\
 You just read back what will be done and asked the caller if that is right.
-Once you know their answer, call record_read_back_answer with it:
-yes when they clearly agree to exactly what you read back, no when they say it is wrong, and change
-when they want something different, such as another time, Provider, visit type or appointment.
-If they are unsure or ask something, answer and ask again without calling it.
+Here the only tool for it is record_read_back_answer. Call it with the caller's answer:
+- yes when they clearly agree to exactly what you read back
+- no when they say it is wrong
+- change when they want something different, or ask about other times, Providers, visit types or
+  appointments. That takes you back to where you can search and choose again, so call it first.
+If they are unsure or ask something else, answer and ask again without calling it.
 Never say it is done: nothing has been written yet.
 """
 
@@ -47,7 +49,10 @@ def read_back_node(
 
     answer_tool = FlowsFunctionSchema(
         name="record_read_back_answer",
-        description="Record the caller's answer to the Read-back you just gave.",
+        description=(
+            "Record the caller's answer to the Read-back you just gave. "
+            "Use change before looking at other times, Providers or appointments."
+        ),
         properties={"answer": {"type": "string", "enum": list(ANSWERS)}},
         required=["answer"],
         handler=record_read_back_answer,
