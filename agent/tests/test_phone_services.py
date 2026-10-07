@@ -22,6 +22,16 @@ def test_a_phone_call_hears_with_nova_3_thinks_with_haiku_and_speaks_with_aura_2
     assert services.tts.settings.voice.startswith("aura-2-")
 
 
+def test_speech_to_text_is_prompted_with_the_providers_names():
+    keyterms = phone_services(KEYS)().stt.settings.keyterm
+
+    for name in ["Marcus Whitfield", "Wojciech Szczepanski", "Siobhan Kowalczyk"]:
+        assert name in keyterms
+    # Callers often say only "Dr. Szczepanski".
+    for surname in ["Whitfield", "Szczepanski", "Kowalczyk"]:
+        assert surname in keyterms
+
+
 def test_each_call_gets_its_own_services():
     make_services = phone_services(KEYS)
 
