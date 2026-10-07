@@ -1,16 +1,18 @@
 """An eval batch: every scenario, several times over, for one LLM config. Graded, saved locally and pushed to Langfuse."""
 
 import json
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 from pipecat.services.llm_service import LLMService
 
 from clinic_evals.caller import Caller
 from clinic_evals.graders import GRADERS, Grade, grade
-from clinic_evals.langfuse import Langfuse
+from clinic_evals.langfuse import Langfuse, LangfuseError
 from clinic_evals.record import RunRecord, Seeded
 from clinic_evals.run import run_scenario
 from clinic_evals.scenario import Scenario
@@ -52,15 +54,23 @@ async def run_evals(
             print(_run_line(result), flush=True)
             _save(results, config, results_dir / f"{batch_id}.json")
             if langfuse:
-                langfuse.push_run(
-                    batch_id=batch_id,
-                    config=config,
-                    scenario=scenario.name,
-                    repeat=repeat,
-                    ending=record.ending,
-                    grades=result.grades,
-                )
+                _push(langfuse, result, config)
     return results
+
+
+def _push(langfuse: Langfuse, result: RunResult, config: str) -> None:
+    """A run already paid for stays in the results file even when Langfuse won't take it."""
+    try:
+        langfuse.push_run(
+            batch_id=result.batch_id,
+            config=config,
+            scenario=result.scenario,
+            repeat=result.repeat,
+            ending=result.record.ending,
+            grades=result.grades,
+        )
+    except (LangfuseError, httpx.HTTPError) as error:
+        print(f"Could not push {result.scenario} run {result.repeat} to Langfuse: {error}", file=sys.stderr)
 
 
 def summary(results: list[RunResult]) -> str:

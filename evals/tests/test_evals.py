@@ -94,6 +94,27 @@ async def test_a_failed_grade_goes_to_langfuse_with_its_reason(ehr_urls, tmp_pat
     assert handoff["comment"] == "expected a Handoff, but no Callback Request was filed"
 
 
+async def test_langfuse_refusing_a_run_does_not_stop_the_batch_or_lose_its_results(ehr_urls, tmp_path, capsys):
+    scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
+    langfuse = LangfuseStandIn(errors=[{"id": "x", "status": 400, "message": "Invalid request data"}])
+
+    results = await run_evals(
+        [scenario],
+        config="scripted",
+        repeats=2,
+        ehr_urls=ehr_urls,
+        agent=lambda seeded: ScriptedLLM([CallTool("handoff", {"reason": "asked_for_person"})]),
+        caller=lambda scenario, seeded: ScriptedCaller(["Can I talk to a real person, please?"]),
+        langfuse=langfuse.client(),
+        results_dir=tmp_path,
+    )
+
+    assert len(results) == 2
+    assert "Invalid request data" in capsys.readouterr().err
+    [saved] = tmp_path.glob("*.json")
+    assert len(json.loads(saved.read_text())["runs"]) == 2
+
+
 def test_langfuse_refusing_an_event_is_an_error():
     langfuse = LangfuseStandIn(errors=[{"id": "x", "status": 400, "message": "Invalid request data"}])
 
