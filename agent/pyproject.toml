@@ -27,3 +27,5 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Pipecat imports audioop, which Python 3.12 flags. Harmless until 3.13.
+filterwarnings = ["ignore:'audioop' is deprecated:DeprecationWarning"]
