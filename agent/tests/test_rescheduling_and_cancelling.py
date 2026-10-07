@@ -3,7 +3,7 @@
 import pytest
 from ehr import clinic_time
 from fakes import CallTool
-from scripts import spoken, verify
+from scripts import answer_read_back, own_tools, spoken, verify
 
 
 def spoken_day(when) -> str:
@@ -25,6 +25,7 @@ async def test_a_verified_patient_cancels_their_appointment_after_a_read_back_an
             CallTool("list_appointments"),
             "You have a sick visit with Dr. Faraday tomorrow at 9 AM. Is that the one to cancel?",
             CallTool("choose_appointment_to_cancel", {"appointment_id": appointment_id}),
+            answer_read_back("yes"),
             CallTool("cancel_appointment"),
         ]
     ) as call:
@@ -50,6 +51,10 @@ async def test_a_verified_patient_cancels_their_appointment_after_a_read_back_an
         assert "cancelled" in call.agent_lines[-1]
         assert call.state == "intent"
         assert not call.ended
+        assert call.tool_results("record_read_back_answer") == [{"answer": "yes"}]
+        offering_cancel = [own_tools(tools) for tools in call.offered_tools if "cancel_appointment" in tools]
+        assert offering_cancel
+        assert all(tools == {"cancel_appointment"} for tools in offering_cancel)
 
 
 async def test_a_verified_patient_reschedules_their_appointment_after_a_read_back_and_a_yes(ehr, start_call):
@@ -75,6 +80,7 @@ async def test_a_verified_patient_reschedules_their_appointment_after_a_read_bac
             ),
             "Dr. Faraday has 2 PM that day. Would that work?",
             CallTool("choose_slot", {"slot_id": new_slot}),
+            answer_read_back("yes"),
             CallTool("reschedule_appointment"),
         ]
     ) as call:
@@ -104,6 +110,10 @@ async def test_a_verified_patient_reschedules_their_appointment_after_a_read_bac
         assert ehr.slot_status(new_slot) == "busy"
         assert f"{spoken_day(two_pm)} at 2 PM" in call.agent_lines[-1]
         assert call.state == "intent"
+        assert call.tool_results("record_read_back_answer") == [{"answer": "yes"}]
+        offering_reschedule = [own_tools(tools) for tools in call.offered_tools if "reschedule_appointment" in tools]
+        assert offering_reschedule
+        assert all(tools == {"reschedule_appointment"} for tools in offering_reschedule)
 
 
 async def test_with_two_upcoming_appointments_the_agent_asks_which_one_before_acting(ehr, start_call):
@@ -121,6 +131,7 @@ async def test_with_two_upcoming_appointments_the_agent_asks_which_one_before_ac
             CallTool("list_appointments"),
             "I see two: a sick visit tomorrow at 9 AM and a follow-up at 3 PM later this week. Which one?",
             CallTool("choose_appointment_to_cancel", {"appointment_id": follow_up}),
+            answer_read_back("yes"),
             CallTool("cancel_appointment"),
         ]
     ) as call:
@@ -147,6 +158,88 @@ NOT_AVAILABLE = "The function `{}` is not currently available."
 
 
 @pytest.mark.scripted_only
+async def test_a_no_to_the_cancel_read_back_goes_back_to_choosing_and_a_cancel_called_at_the_read_back_is_refused(
+    ehr, start_call
+):
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faraday = ehr.create_provider(given="Imogen", family="Faraday")
+    appointment_id = ehr.create_appointment(patient_id, faraday, clinic_time(1, "09:00"), "sick_visit")
+    slot_id = ehr.appointment(appointment_id)["slot"][0]["reference"].removeprefix("Slot/")
+
+    async with start_call(
+        [
+            "Sure. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            CallTool("list_appointments"),
+            CallTool("choose_appointment_to_cancel", {"appointment_id": appointment_id}),
+            # The Caller says no, and the LLM cancels anyway, then records the no and tries once more.
+            CallTool("cancel_appointment"),
+            answer_read_back("no"),
+            CallTool("cancel_appointment"),
+            "Sorry about that. Which appointment did you mean?",
+        ]
+    ) as call:
+        await call.converse(["I need to cancel my appointment.", f"Rosalind Okonkwo, {spoken(born)}."])
+        assert call.state == "cancel_read_back"
+        at_read_back = len(call.offered_tools)
+
+        await call.say("No, that's not the one.")
+
+        assert own_tools(call.offered_tools[at_read_back]) == {"record_read_back_answer"}
+        assert call.tool_results("cancel_appointment") == [NOT_AVAILABLE.format("cancel_appointment")] * 2
+        assert call.tool_results("record_read_back_answer") == [{"answer": "no"}]
+        assert call.state == "choose_appointment"
+        assert call.agent_lines[-1] == "Sorry about that. Which appointment did you mean?"
+        assert ehr.appointment(appointment_id)["status"] == "booked"
+        assert ehr.slot_status(slot_id) == "busy"
+
+
+@pytest.mark.scripted_only
+async def test_a_no_to_the_reschedule_read_back_goes_back_to_choosing_and_a_reschedule_called_at_the_read_back_is_refused(
+    ehr, start_call
+):
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faraday = ehr.create_provider(given="Imogen", family="Faraday")
+    appointment_id = ehr.create_appointment(patient_id, faraday, clinic_time(1, "09:00"), "follow_up")
+    old_slot = ehr.appointment(appointment_id)["slot"][0]["reference"].removeprefix("Slot/")
+    ten_slot = ehr.create_slot(faraday, clinic_time(2, "10:00"))
+
+    async with start_call(
+        [
+            "Sure. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            CallTool("list_appointments"),
+            CallTool("choose_appointment_to_reschedule", {"appointment_id": appointment_id}),
+            CallTool("find_slots", {"provider": faraday.name}),
+            "Dr. Faraday has 10 AM. Would that work?",
+            CallTool("choose_slot", {"slot_id": ten_slot}),
+            # The Caller says no, and the LLM moves it anyway, then records the no and tries once more.
+            CallTool("reschedule_appointment"),
+            answer_read_back("no"),
+            CallTool("reschedule_appointment"),
+            "Sorry about that. When would suit you better?",
+        ]
+    ) as call:
+        await call.converse(
+            ["I need to move my appointment to any time with Dr. Faraday.", f"Rosalind Okonkwo, {spoken(born)}.", "10 AM."]
+        )
+        assert call.state == "reschedule_read_back"
+        at_read_back = len(call.offered_tools)
+
+        await call.say("No, that's wrong.")
+
+        assert own_tools(call.offered_tools[at_read_back]) == {"record_read_back_answer"}
+        assert call.tool_results("reschedule_appointment") == [NOT_AVAILABLE.format("reschedule_appointment")] * 2
+        assert call.tool_results("record_read_back_answer") == [{"answer": "no"}]
+        assert call.state == "find_slot"
+        assert call.agent_lines[-1] == "Sorry about that. When would suit you better?"
+        assert ehr.appointment(appointment_id)["slot"] == [{"reference": f"Slot/{old_slot}"}]
+        assert ehr.slot_status(ten_slot) == "free"
+
+
+@pytest.mark.scripted_only
 async def test_cancel_is_unreachable_until_a_read_back_and_cancels_only_the_appointment_read_back(ehr, start_call):
     born = ehr.unused_birth_date()
     patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
@@ -167,7 +260,10 @@ async def test_cancel_is_unreachable_until_a_read_back_and_cancels_only_the_appo
             CallTool("choose_appointment_to_cancel", {"appointment_id": not_theirs}),
             "You have a sick visit tomorrow and a follow-up later this week. Which one?",
             CallTool("choose_appointment_to_cancel", {"appointment_id": sick_visit}),
+            answer_read_back("change"),
+            CallTool("cancel_appointment"),
             CallTool("choose_appointment_to_cancel", {"appointment_id": follow_up}),
+            answer_read_back("yes"),
             CallTool("cancel_appointment"),
         ]
     ) as call:
@@ -185,6 +281,10 @@ async def test_cancel_is_unreachable_until_a_read_back_and_cancels_only_the_appo
         assert all(a["status"] == "booked" for a in ehr.appointments_of(patient_id))
 
         await call.say("Oh no, sorry, I mean the follow-up.")
+        assert call.tool_results("record_read_back_answer") == [{"answer": "change"}]
+        assert call.tool_results("cancel_appointment") == [NOT_AVAILABLE.format("cancel_appointment")] * 3
+        assert all(a["status"] == "booked" for a in ehr.appointments_of(patient_id))
+        assert call.state == "cancel_read_back"
         assert "follow-up" in call.agent_lines[-1]
 
         await call.say("Yes.")
@@ -214,7 +314,10 @@ async def test_reschedule_is_unreachable_until_a_read_back_and_moves_only_to_the
             CallTool("reschedule_appointment"),
             "Dr. Faraday has 10 AM or 11 AM. Which would you like?",
             CallTool("choose_slot", {"slot_id": ten_slot}),
+            answer_read_back("change"),
+            CallTool("reschedule_appointment"),
             CallTool("choose_slot", {"slot_id": eleven_slot}),
+            answer_read_back("yes"),
             CallTool("reschedule_appointment"),
         ]
     ) as call:
@@ -232,6 +335,10 @@ async def test_reschedule_is_unreachable_until_a_read_back_and_moves_only_to_the
         assert ehr.slot_status(ten_slot) == "free"
 
         await call.say("Hmm, make it 11 instead.")
+        assert call.tool_results("record_read_back_answer") == [{"answer": "change"}]
+        assert call.tool_results("reschedule_appointment") == [NOT_AVAILABLE.format("reschedule_appointment")] * 2
+        assert ehr.slot_status(ten_slot) == "free"
+        assert call.state == "reschedule_read_back"
         assert "11 AM" in call.agent_lines[-1]
 
         await call.say("Yes.")
@@ -261,6 +368,7 @@ async def test_a_new_time_taken_before_the_yes_is_not_claimed_as_moved_and_new_t
             CallTool("find_slots", {"provider": faraday.name}),
             "Dr. Faraday has 10 AM or 11 AM. Which would you like?",
             CallTool("choose_slot", {"slot_id": ten_slot}),
+            answer_read_back("yes"),
             CallTool("reschedule_appointment"),
             "Dr. Faraday still has 11 AM. Would that work?",
         ]

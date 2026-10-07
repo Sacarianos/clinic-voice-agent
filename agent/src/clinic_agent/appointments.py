@@ -1,9 +1,9 @@
 """A Verified Patient's upcoming appointments: hearing them, then Rescheduling or Cancelling one.
 
 Per ADR 0003 each write is reachable only one way, as in booking. The LLM picks an appointment that
-list_appointments returned, and the agent itself reads back what will change. Only that Read-back node
-offers the write, which takes no arguments: it changes what was read back, under an idempotency key
-made for that Read-back. Choosing again leaves the node, and the tool with it.
+list_appointments returned, and the agent itself reads back what will change. Only a recorded yes to
+that Read-back reaches the write, which takes no arguments: it changes what was read back, under an
+idempotency key made for that Read-back. A no or a change goes back to choosing.
 """
 
 import uuid
@@ -17,6 +17,7 @@ from clinic_agent.booking import VISIT_TYPES, Booking, Exits, spoken_appointment
 from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutcome
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
+from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
@@ -37,11 +38,10 @@ choose_appointment_to_reschedule or choose_appointment_to_cancel.
 Don't repeat the details or ask the caller to confirm them yourself: the agent reads them back.
 """
 
-CANCEL_READ_BACK_TASK = """\
-You just read back the appointment the caller wants to cancel and asked if that is right.
-If the caller clearly says yes, call cancel_appointment. Never say it is cancelled before it returns.
-If they mean another appointment, call choose_appointment_to_cancel with that one. If they would
-rather move it, call choose_appointment_to_reschedule. If they are unsure, answer and ask again.
+CHOOSE_APPOINTMENT_AGAIN_TASK = """\
+The caller didn't want what you read back. If they said which appointment they mean, call
+choose_appointment_to_cancel with it, or choose_appointment_to_reschedule if they would rather move it.
+Otherwise ask which appointment they mean and what they want to do with it. Never pick one for them.
 """
 
 RESCHEDULE_FIND_SLOT_TASK = """\
@@ -51,13 +51,6 @@ Provider's name, the day and the time. If none came back, say so and suggest ano
 day or Provider. If they asked for a date past booking_window_ends, tell them how far out they can book.
 As soon as the caller picks one of the offered times, call choose_slot.
 Don't repeat the details or ask the caller to confirm them yourself: choose_slot reads them back.
-"""
-
-RESCHEDULE_READ_BACK_TASK = """\
-You just read back the move of the caller's appointment and asked if that is right.
-If the caller clearly says yes, call reschedule_appointment. Never say it is moved before it returns.
-If they want a different time or Provider, call choose_slot for a time already offered, or find_slots
-for new times. If they are unsure, answer their question and ask again.
 """
 
 
@@ -161,7 +154,7 @@ class _Appointments:
 
         return FlowsFunctionSchema(
             name="cancel_appointment",
-            description="Cancel exactly the appointment you read back. Call only after the caller clearly says yes to it.",
+            description="Cancel exactly the appointment you read back, now that the caller has said yes to it.",
             properties={},
             required=[],
             handler=with_holding_line(cancel_appointment),
@@ -170,22 +163,20 @@ class _Appointments:
             timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
         )
 
-    def choose_appointment_node(self) -> NodeConfig:
+    def choose_appointment_node(self, task: str = CHOOSE_APPOINTMENT_TASK) -> NodeConfig:
         return {
             "name": "choose_appointment",
-            "task_messages": [{"role": "developer", "content": CHOOSE_APPOINTMENT_TASK}],
+            "task_messages": [{"role": "developer", "content": task}],
             "functions": [self.choose_to_reschedule_tool(), self.choose_to_cancel_tool()],
         }
 
     def cancel_read_back_node(self, appointment: Appointment) -> NodeConfig:
-        line = f"Just to confirm, you'd like to cancel your {_details(appointment)}. Is that right?"
-        return {
-            "name": "cancel_read_back",
-            "pre_actions": [{"type": "tts_say", "text": line}],
-            "task_messages": [{"role": "developer", "content": CANCEL_READ_BACK_TASK}],
-            "functions": [self.cancel_tool(appointment), self.choose_to_cancel_tool(), self.choose_to_reschedule_tool()],
-            "respond_immediately": False,
-        }
+        return read_back_node(
+            "cancel_read_back",
+            f"Just to confirm, you'd like to cancel your {_details(appointment)}. Is that right?",
+            then_write=write_node("cancel", self.cancel_tool(appointment)),
+            choose_again=lambda: self.choose_appointment_node(CHOOSE_APPOINTMENT_AGAIN_TASK),
+        )
 
 
 @dataclass(frozen=True)
@@ -242,7 +233,7 @@ class _Rescheduling(Booking):
 
         return FlowsFunctionSchema(
             name="reschedule_appointment",
-            description="Move the appointment exactly as you read back. Call only after the caller clearly says yes to it.",
+            description="Move the appointment exactly as you read back, now that the caller has said yes to it.",
             properties={},
             required=[],
             handler=with_holding_line(reschedule_appointment),
@@ -256,13 +247,12 @@ class _Rescheduling(Booking):
             f"Just to confirm, you'd like to move your {_details(self.appointment)} "
             f"to {spoken_time(slot.start)} with {slot.provider_name}. Is that right?"
         )
-        return {
-            "name": "reschedule_read_back",
-            "pre_actions": [{"type": "tts_say", "text": line}],
-            "task_messages": [{"role": "developer", "content": RESCHEDULE_READ_BACK_TASK}],
-            "functions": [self.reschedule_tool(slot), self.choose_slot_tool(), self.find_slots_tool()],
-            "respond_immediately": False,
-        }
+        return read_back_node(
+            "reschedule_read_back",
+            line,
+            then_write=write_node("reschedule", self.reschedule_tool(slot)),
+            choose_again=self.choose_again_node,
+        )
 
 
 def list_appointments_tool(ehr: EhrAdapter, providers: list[Provider], exits: Exits) -> FlowsFunctionSchema:
