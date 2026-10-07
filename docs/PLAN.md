@@ -63,7 +63,7 @@ Caller's phone
 8. **Handoff** and **Emergency Redirect**: reachable from any state.
 
 Identity Verification rules:
-- Date of birth matches exactly. The surname matches by sound. The given name matches by its first letter.
+- Date of birth matches exactly. The surname matches by sound, or with one wrong letter per five as long as the first letter is right. The given name matches by its first letter.
 - If more than one patient matches, ask the caller to spell their last name.
 - Two failed attempts lead to a Handoff.
 - The failure message is always the same, so a caller can't learn whether a patient exists.

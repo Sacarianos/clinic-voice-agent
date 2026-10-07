@@ -35,6 +35,64 @@ describe("Verify patient", () => {
     expect(response.body).toEqual({ status: "verified", patientId });
   });
 
+  // The surname pairs in evals/confusions.yaml: what speech recognition writes down for each eval Patient.
+  test.each([
+    ["Okonkwo", "Oconco"],
+    ["Villanueva", "Vianueva"],
+    ["Achterberg", "Ackerberg"],
+    ["Ferreira", "Ferrara"],
+    ["Brennan", "Brendan"],
+    ["Raghunathan", "Ragunathan"],
+    ["Abernathy", "Abernethy"],
+    ["Nakamura", "Nakamora"],
+    ["Lindqvist", "Lindquist"],
+    ["Ibarra", "Ibara"],
+  ])("%s verifies the Patient when speech recognition hears it as %s", async (family, heard) => {
+    const dateOfBirth = await unusedBirthDate();
+    const patientId = await createPatient({ given: ["Margarethe"], family, birthDate: dateOfBirth });
+
+    const response = await verify({ givenName: "Margarethe", familyName: heard, dateOfBirth });
+
+    expect(response.body).toEqual({ status: "verified", patientId });
+  });
+
+  test.each([
+    ["Brennan", "Brenner"],
+    ["Brennan", "Bryant"],
+    ["Larson", "Carson"],
+    ["Kim", "Kin"],
+  ])("%s does not verify when the Caller says %s, even with the right date of birth", async (family, stated) => {
+    const dateOfBirth = await unusedBirthDate();
+    await createPatient({ given: ["Margarethe"], family, birthDate: dateOfBirth });
+
+    const response = await verify({ givenName: "Margarethe", familyName: stated, dateOfBirth });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "not_verified" });
+  });
+
+  test("a near surname with the wrong date of birth gets the same not-verified response", async () => {
+    const dateOfBirth = await unusedBirthDate();
+    const otherDateOfBirth = await unusedBirthDate();
+    await createPatient({ given: ["Margarethe"], family: "Achterberg", birthDate: dateOfBirth });
+
+    const response = await verify({ givenName: "Margarethe", familyName: "Ackerberg", dateOfBirth: otherDateOfBirth });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "not_verified" });
+  });
+
+  test("two Patients whose surnames are each a near miss of what was heard are ambiguous", async () => {
+    const dateOfBirth = await unusedBirthDate();
+    await createPatient({ given: ["Valentina"], family: "Villanueva", birthDate: dateOfBirth });
+    await createPatient({ given: ["Veronica"], family: "Vilanueva", birthDate: dateOfBirth });
+
+    const response = await verify({ givenName: "V", familyName: "Vianueva", dateOfBirth });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "ambiguous" });
+  });
+
   test("a given name matches by its first letter", async () => {
     const dateOfBirth = await unusedBirthDate();
     const patientId = await createPatient({ given: ["Katherine", "Ann"], family: "Lindqvist", birthDate: dateOfBirth });
