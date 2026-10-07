@@ -13,6 +13,7 @@ import httpx
 import pytest
 from ehr import Ehr
 from fakes import ScriptedLLM
+from faulty_adapter import FaultyAdapter
 
 from clinic_agent.conversation import ROLE
 from clinic_agent.ehr import EhrAdapter
@@ -75,6 +76,15 @@ def _ehr_ready():
 @pytest.fixture
 def ehr_adapter_url(_ehr_ready) -> str:
     return EHR_ADAPTER_URL
+
+
+@pytest.fixture
+async def faulty_adapter(ehr_adapter_url):
+    """Sits in front of the adapter. Point start_call at `faulty_adapter.url` and inject faults into it."""
+    adapter = FaultyAdapter(ehr_adapter_url)
+    await adapter.start()
+    yield adapter
+    await adapter.close()
 
 
 @pytest.fixture

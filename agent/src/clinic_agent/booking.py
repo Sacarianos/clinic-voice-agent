@@ -15,7 +15,8 @@ from zoneinfo import ZoneInfo
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
-from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch
+from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
+from clinic_agent.writes import write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -142,12 +143,14 @@ class Booking:
         idempotency_key = str(uuid.uuid4())
 
         async def book_appointment(args: dict, flow_manager: FlowManager):
-            written = await self.ehr.book(
-                patient_id=flow_manager.state["patient_id"],
-                slot_id=slot.slot_id,
-                visit_type=visit_type,
-                idempotency_key=idempotency_key,
-            )
+            patient_id = flow_manager.state["patient_id"]
+
+            async def book() -> WriteOutcome:
+                return await self.ehr.book(
+                    patient_id=patient_id, slot_id=slot.slot_id, visit_type=visit_type, idempotency_key=idempotency_key
+                )
+
+            written = await write_until_settled(book)
             if written.outcome == "succeeded":
                 booked = f"You're all booked: {_details(slot, visit_type)}. Is there anything else I can help with?"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)
