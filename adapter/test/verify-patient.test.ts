@@ -140,25 +140,42 @@ describe("Verify patient", () => {
       smythId = await createPatient({ given: ["Johanna"], family: "Smyth", birthDate: dateOfBirth });
     });
 
-    test("a name that matches both is ambiguous", async () => {
-      const response = await verify({ givenName: "Jo", familyName: "Smithe", dateOfBirth });
+    // Speech recognition can turn Johanna Smyth into Joanna Smith. Exact text on the first try proves nothing.
+    test.each([
+      ["Joanna", "Smith"],
+      ["Johanna", "Smyth"],
+      ["Johanna", "Smith"],
+      ["Joanna", "Smyth"],
+      ["Jo", "Smithe"],
+    ])("the first attempt as %s %s is ambiguous", async (givenName, familyName) => {
+      const response = await verify({ givenName, familyName, dateOfBirth });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ status: "ambiguous" });
     });
 
-    test("the spelled-out surname picks the one it spells", async () => {
-      const smith = await verify({ givenName: "Jo", familyName: "S M I T H", dateOfBirth });
-      const smyth = await verify({ givenName: "Jo", familyName: "S-M-Y-T-H", dateOfBirth });
+    test("after a spelling request, the spelled surname picks the one it spells", async () => {
+      const smith = await verify({ givenName: "Jo", familyName: "S M I T H", dateOfBirth, familyNameSpelled: true });
+      const smyth = await verify({ givenName: "Jo", familyName: "S-M-Y-T-H", dateOfBirth, familyNameSpelled: true });
 
       expect(smith.body).toEqual({ status: "verified", patientId: smithId });
       expect(smyth.body).toEqual({ status: "verified", patientId: smythId });
     });
 
-    test("the exact given name picks the one it names", async () => {
-      const response = await verify({ givenName: "Johanna", familyName: "Smithe", dateOfBirth });
+    test("a spelled surname that neither Patient has exactly stays ambiguous", async () => {
+      const response = await verify({ givenName: "Jo", familyName: "S M I T H E", dateOfBirth, familyNameSpelled: true });
 
-      expect(response.body).toEqual({ status: "verified", patientId: smythId });
+      expect(response.body).toEqual({ status: "ambiguous" });
     });
+  });
+
+  test("two Patients with the same spelled surname stay ambiguous, even when the given name names one", async () => {
+    const dateOfBirth = await unusedBirthDate();
+    await createPatient({ given: ["Joanna"], family: "Smith", birthDate: dateOfBirth });
+    await createPatient({ given: ["Johanna"], family: "Smith", birthDate: dateOfBirth });
+
+    const response = await verify({ givenName: "Joanna", familyName: "S M I T H", dateOfBirth, familyNameSpelled: true });
+
+    expect(response.body).toEqual({ status: "ambiguous" });
   });
 });
