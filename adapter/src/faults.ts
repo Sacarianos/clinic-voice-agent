@@ -9,18 +9,23 @@
 //   and Reschedule come back rejected with slot_taken. Cancel takes no Slot and is unaffected.
 // - half_write: the EHR applies only the first half of a write's transaction, then the connection
 //   drops. Writes come back unknown, and the same write sent again finishes the job.
+// - stalled_write: the EHR sits on each write until the adapter gives up on it, then applies it
+//   STALLED_WRITE_LANDS_AFTER_MS later, if it still applies. Writes come back unknown, and nothing
+//   is written until well after the adapter answered.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Bundle, FhirResource, OperationOutcome, Slot } from "fhir/r4";
 import type { MiddlewareHandler } from "hono";
 import { freed } from "./scheduling/slot-holds.ts";
 
-export const FAULTS = ["timeout", "server_error", "slot_taken", "half_write"] as const;
+export const FAULTS = ["timeout", "server_error", "slot_taken", "half_write", "stalled_write"] as const;
 export type Fault = (typeof FAULTS)[number];
 
 export const FAULT_HEADER = "x-inject-fault";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
+
+export const STALLED_WRITE_LANDS_AFTER_MS = 3_000;
 
 const currentFault = new AsyncLocalStorage<Fault>();
 
@@ -43,6 +48,7 @@ export const fetchWithFaults: Fetch = async (url, init) => {
   const isWrite = init.method !== "GET";
   if (fault === "server_error") return serverError();
   if (fault === "timeout" && isWrite) return answerTooLate(url, init);
+  if (fault === "stalled_write" && isWrite) return applyAfterGivingUp(url, init);
   const transaction = isWrite ? transactionIn(init) : undefined;
   if (fault === "half_write" && transaction) return applyFirstHalf(url, init, transaction);
   if (fault === "slot_taken" && transaction) await takeSlotsFirst(url, init, transaction);
@@ -65,6 +71,21 @@ async function answerTooLate(url: string, init: RequestInit): Promise<Response> 
     if (signal.aborted) reject(signal.reason);
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
   });
+}
+
+async function applyAfterGivingUp(url: string, init: RequestInit): Promise<Response> {
+  const signal = init.signal!;
+  await new Promise((resolve) => {
+    if (signal.aborted) resolve(undefined);
+    signal.addEventListener("abort", resolve, { once: true });
+  });
+  setTimeout(() => {
+    fetch(url, { ...init, signal: null }).then(
+      (response) => response.body?.cancel(),
+      () => {},
+    );
+  }, STALLED_WRITE_LANDS_AFTER_MS);
+  throw signal.reason;
 }
 
 function transactionIn(init: RequestInit): Bundle | undefined {

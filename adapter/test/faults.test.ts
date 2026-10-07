@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { startAdapter, type Adapter } from "./support/adapter.ts";
 import {
   appointmentsInSlot,
+  appointmentsWithKey,
   clinicTime,
   createPatient,
   createProvider,
@@ -89,6 +90,29 @@ describe("timeout", () => {
       expect((await readSlot(slotId)).status).toBe("busy");
     } finally {
       await impatient.close();
+    }
+  });
+});
+
+describe("stalled_write", () => {
+  test("makes a Book unknown, and the Book lands after the adapter answered", async () => {
+    const quick = await startAdapter({ fhirTimeoutMs: 2_000 });
+    try {
+      const slotId = await createSlot(provider, clinicTime(1, "10:15"));
+      const idempotencyKey = randomUUID();
+
+      const response = await quick.post(
+        "/appointments",
+        { patientId, slotId, visitType: "sick_visit", idempotencyKey },
+        withFault("stalled_write"),
+      );
+
+      expect(response.body).toEqual({ outcome: "unknown" });
+      expect(await appointmentsInSlot(slotId)).toEqual([]);
+      await expect.poll(() => appointmentsWithKey(idempotencyKey), { timeout: 10_000, interval: 200 }).toHaveLength(1);
+      expect((await readSlot(slotId)).status).toBe("busy");
+    } finally {
+      await quick.close();
     }
   });
 });
