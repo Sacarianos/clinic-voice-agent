@@ -33,7 +33,7 @@ The agent never talks to FHIR. It calls the adapter in `adapter/`, a small Hono 
 { "givenName": "Alvaro", "familyName": "Hudson", "dateOfBirth": "1983-12-25" }
 ```
 
-It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "status": "ambiguous" }` or `{ "status": "not_verified" }`. The date of birth must match exactly, the surname must sound the same, and the given name must start with the same letter. When several Patients match, an exact surname and then an exact given name narrow them down, so a spelled-out surname like `"S M I T H"` settles an ambiguous match. A not-verified answer never says which part was wrong.
+It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "status": "ambiguous" }` or `{ "status": "not_verified" }`. The date of birth must match exactly, the surname must sound the same, and the given name must start with the same letter. When several Patients match, the answer is ambiguous, even if one of them has exactly the name sent, because speech recognition can write down one Patient's name for the other. The agent then asks the Caller to spell the surname and sends the next attempt with `"familyNameSpelled": true`. Only then does an exact surname break the tie, so a spelled-out `"S M I T H"` picks Smith over Smyth. A given name never breaks a tie. A not-verified answer never says which part was wrong.
 
 `GET /providers` lists the Providers a Caller can book with, as `{ "providers": [{ "providerId": "whitfield", "providerName": "Dr. Marcus Whitfield" }] }`. The `providerId` is the clinic's own key and never changes.
 
