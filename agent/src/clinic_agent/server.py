@@ -28,6 +28,7 @@ from clinic_agent.tracing import configure_tracing
 # Twilio Media Streams carry 8 kHz mu-law. The serializer converts to and from PCM at this rate.
 PHONE_SAMPLE_RATE = 8000
 DEFAULT_PORT = 8765
+UNKNOWN_CALLER_PHONE = "unknown"
 
 
 @dataclass(frozen=True)
@@ -50,9 +51,12 @@ def create_app(
     async def voice(request: Request) -> Response:
         # Twilio only streams to wss://, and ngrok keeps the public host in the Host header.
         stream_url = f"wss://{request.headers['host']}/ws"
+        # The Caller's number rides along as a stream parameter. Callback Requests call it back.
+        caller = (await request.form()).get("From")
+        parameter = f"<Parameter name={quoteattr('from_number')} value={quoteattr(str(caller))}/>" if caller else ""
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
-            f"<Response><Connect><Stream url={quoteattr(stream_url)}/></Connect></Response>"
+            f"<Response><Connect><Stream url={quoteattr(stream_url)}>{parameter}</Stream></Connect></Response>"
         )
         return Response(content=twiml, media_type="application/xml")
 
@@ -97,7 +101,7 @@ def create_app(
 
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
-            await start_conversation(call, services.ehr)
+            await start_conversation(call, services.ehr, call_data.from_number or UNKNOWN_CALLER_PHONE)
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

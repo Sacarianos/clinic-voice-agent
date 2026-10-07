@@ -6,6 +6,7 @@ calls against that real model instead, with its API key in the environment.
 """
 
 import os
+import random
 import time
 
 import httpx
@@ -72,6 +73,11 @@ def _ehr_ready():
 
 
 @pytest.fixture
+def ehr_adapter_url(_ehr_ready) -> str:
+    return EHR_ADAPTER_URL
+
+
+@pytest.fixture
 def ehr(_ehr_ready):
     records = Ehr(FHIR_BASE_URL)
     yield records
@@ -79,16 +85,23 @@ def ehr(_ehr_ready):
 
 
 @pytest.fixture
-def start_call(_ehr_ready, llm_config):
+def start_call(ehr, llm_config):
     """start_call(script) opens a TextCall. The script is what the fake LLM does, one step per LLM run.
 
-    With --llm set, the script is ignored and the named model decides instead.
+    With --llm set, the script is ignored and the named model decides instead. Each call comes from its
+    own phone number, so a test finds its Callback Requests by `call.caller_phone`. They are deleted
+    afterwards, before the Patients they point to.
     """
+    phones = []
 
-    def start(script: list) -> TextCall:
+    def start(script: list, *, adapter_url: str = EHR_ADAPTER_URL) -> TextCall:
+        phone = f"+1555{random.randrange(10**7):07d}"
+        phones.append(phone)
         if llm_config == "scripted":
-            return TextCall(ScriptedLLM(script), EhrAdapter(EHR_ADAPTER_URL))
+            return TextCall(ScriptedLLM(script), EhrAdapter(adapter_url), caller_phone=phone)
         llm = create_llm({**os.environ, "LLM_CONFIG": llm_config}, system_instruction=ROLE)
-        return TextCall(llm, EhrAdapter(EHR_ADAPTER_URL), reply_timeout_secs=30)
+        return TextCall(llm, EhrAdapter(adapter_url), caller_phone=phone, reply_timeout_secs=30)
 
-    return start
+    yield start
+    for phone in phones:
+        ehr.delete_callback_requests_from(phone)

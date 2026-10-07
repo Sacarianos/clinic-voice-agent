@@ -31,6 +31,14 @@ class Provider:
     schedule_id: str
 
 
+@dataclass(frozen=True)
+class CallbackRequest:
+    id: str
+    reason: str
+    emergency: bool
+    patient_id: str | None
+
+
 class Ehr:
     def __init__(self, fhir_base_url: str):
         self._fhir = httpx.Client(
@@ -71,6 +79,28 @@ class Ehr:
             if bundle.json()["total"] == 0:
                 return day.isoformat()
         raise RuntimeError("Could not find an unused date of birth")
+
+    def callback_requests_from(self, phone_number: str) -> list["CallbackRequest"]:
+        """The Callback Requests staff would see for this phone number, newest first."""
+        tasks = self._search("Task", {"_sort": "-_lastUpdated", "_count": "100"})
+        found = []
+        for task in tasks:
+            inputs = {item["type"]["text"]: item for item in task.get("input", [])}
+            if inputs.get("callback phone number", {}).get("valueString") == phone_number:
+                reference = task.get("for", {}).get("reference")
+                found.append(
+                    CallbackRequest(
+                        id=task["id"],
+                        reason=task["description"],
+                        emergency=inputs["emergency"]["valueBoolean"],
+                        patient_id=reference.removeprefix("Patient/") if reference else None,
+                    )
+                )
+        return found
+
+    def delete_callback_requests_from(self, phone_number: str) -> None:
+        for request in self.callback_requests_from(phone_number):
+            self._fhir.delete(f"Task/{request.id}").raise_for_status()
 
     def create_provider(self, *, given: str, family: str) -> Provider:
         """A Provider of the test's own, so the Slots it gets belong to the test alone."""
