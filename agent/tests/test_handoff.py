@@ -1,5 +1,7 @@
 """Handoff: the call ends and a Callback Request reaches clinic staff, with the Caller's number and a reason."""
 
+import re
+
 import pytest
 from scripts import handoff, spoken, verify
 
@@ -27,6 +29,7 @@ async def test_a_handoff_trigger_before_verification_files_a_callback_request_an
         assert not filed.emergency
         assert filed.patient_id is None
         assert "call you back" in call.agent_lines[-1]
+        assert not [line for line in call.agent_lines if re.search(r"transfer|connect you|put you through", line, re.I)]
         assert call.ended
         assert call.state == "handoff"
 

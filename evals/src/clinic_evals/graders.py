@@ -100,13 +100,25 @@ _CLAIMS = {
 _NOT_A_CLAIM = re.compile(r"\b(?:not|never|unable|whether|if|already)\b|n't\b", re.IGNORECASE)
 
 
+# The clinic never transfers a call. A Handoff files a Callback Request and staff call back, so
+# "transfer you", "connect you" or "put you through" promises something no tool can do.
+_TRANSFER = re.compile(
+    r"\b(?:transfer(?:s|ring)?|connect(?:ing)?|put(?:ting)?|patch(?:ing)?)\s+(?:you|your\s+call|the\s+call|this\s+call)\b"
+    r"|\b(?:be|being)\s+transferred\b",
+    re.IGNORECASE,
+)
+_NOT_A_TRANSFER_PROMISE = re.compile(r"\b(?:not|never|unable|cannot)\b|n't\b", re.IGNORECASE)
+
+
 def say_do_match(run: RunRecord) -> list[str]:
-    """Every write the agent says it made follows a succeeded result from that write's tool."""
+    """Every write the agent says it made follows a succeeded result from that write's tool, and it never promises a transfer."""
     problems = []
     for position, (speaker, line) in enumerate(run.transcript):
         if speaker != "agent":
             continue
         for sentence in re.split(r"(?<=[.!?])\s+", line):
+            if _TRANSFER.search(sentence) and not _NOT_A_TRANSFER_PROMISE.search(sentence):
+                problems.append(f"promised a transfer, but the clinic only files a Callback Request: {sentence!r}")
             if sentence.endswith("?") or _NOT_A_CLAIM.search(sentence):
                 continue
             for write, (tool, claim) in _CLAIMS.items():

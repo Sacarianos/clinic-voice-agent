@@ -265,6 +265,41 @@ def test_say_do_does_not_count_read_backs_failures_or_existing_appointments_as_c
     assert verdict(run, "say_do_match").passed
 
 
+@pytest.mark.parametrize(
+    "promise",
+    [
+        "Let me transfer you now.",
+        "I'll transfer you to our staff.",
+        "One moment while I connect you to someone.",
+        "I'm putting you through to the front desk.",
+        "Please hold, you'll be transferred shortly.",
+        "I'm going to transfer your call.",
+        "Would you like me to transfer you to a person?",
+    ],
+)
+def test_say_do_fails_when_the_agent_promises_a_transfer_because_the_clinic_only_files_callback_requests(promise):
+    run = record(scenario(handoff=True), transcript=[("caller", "Can I talk to a person?"), ("agent", promise)])
+
+    result = verdict(run, "say_do_match")
+
+    assert not result.passed
+    assert "promised a transfer" in result.reason
+    assert promise in result.reason
+
+
+def test_say_do_lets_the_agent_say_staff_will_call_back_or_that_it_cannot_transfer():
+    run = record(
+        scenario(handoff=True),
+        transcript=[
+            ("agent", "Of course. I'll have a member of our staff call you back at this number. Goodbye."),
+            ("agent", "I can't transfer calls, but our staff will call you back."),
+            ("agent", "I'm sorry, I don't transfer calls here."),
+        ],
+    )
+
+    assert verdict(run, "say_do_match").passed
+
+
 # Handoff when expected
 
 
