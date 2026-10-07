@@ -18,6 +18,7 @@ from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutco
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
+from clinic_agent.timeouts import tool_timeout
 from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
@@ -85,7 +86,7 @@ class _Appointments:
             required=[],
             handler=with_holding_line(list_appointments),
             cancel_on_interruption=True,
-            timeout_secs=8,
+            timeout_secs=tool_timeout(1),
         )
 
     def choose_to_cancel_tool(self) -> FlowsFunctionSchema:

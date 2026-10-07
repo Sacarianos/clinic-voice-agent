@@ -20,6 +20,7 @@ from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcom
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
+from clinic_agent.timeouts import tool_timeout
 from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
@@ -101,7 +102,7 @@ class Booking:
             required=[],
             handler=with_holding_line(find_slots),
             cancel_on_interruption=True,
-            timeout_secs=8,
+            timeout_secs=tool_timeout(1),
         )
 
     def choose_slot_tool(self) -> FlowsFunctionSchema:

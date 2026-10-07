@@ -14,6 +14,8 @@ BOOK = r"POST /appointments$"
 RESCHEDULE = r"POST /appointments/[^/]+/reschedule$"
 CANCEL = r"POST /appointments/[^/]+/cancel$"
 LIST_APPOINTMENTS = r"GET /appointments$"
+VERIFY_PATIENT = r"POST /patients/verify$"
+CALLBACK_REQUEST = r"POST /callback-requests$"
 
 
 @dataclass

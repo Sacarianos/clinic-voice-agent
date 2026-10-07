@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 import pytest
 from ehr import clinic_time
 from fakes import CallTool
-from faulty_adapter import BOOK, CANCEL, LIST_APPOINTMENTS, RESCHEDULE
-from scripts import answer_read_back, spoken, verify
+from faulty_adapter import BOOK, CALLBACK_REQUEST, CANCEL, LIST_APPOINTMENTS, RESCHEDULE, VERIFY_PATIENT
+from scripts import answer_read_back, handoff, spoken, verify
 
 from clinic_agent.holding import HOLDING_LINE
 
@@ -366,3 +366,37 @@ async def test_a_slot_taken_just_before_the_book_is_explained_and_not_retried(eh
         assert "that time was just taken" in reply
         assert ehr.appointments_of(patient_id) == []
         assert call.state == "find_slot"
+
+
+async def test_a_slow_identity_verification_has_a_holding_line_before_the_answer(ehr, start_call, faulty_adapter):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faulty_adapter.inject("slow", into=VERIFY_PATIENT)
+    async with start_call(
+        [
+            "Sure. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            "Thank you, Rosalind. How can I help?",
+        ],
+        adapter_url=faulty_adapter.url,
+    ) as call:
+        await call.say("I'd like an appointment.")
+        reply = await call.say(f"Rosalind Okonkwo, {spoken(born)}.")
+
+        assert faulty_adapter.injected == ["slow POST /patients/verify"]
+        assert reply.startswith(HOLDING_LINE)
+        assert call.agent_lines[-1] == "Thank you, Rosalind. How can I help?"
+        assert call.state == "intent"
+
+
+async def test_a_slow_callback_request_has_a_holding_line_before_the_goodbye(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("slow", into=CALLBACK_REQUEST)
+    async with start_call([handoff("asked_for_person")], adapter_url=faulty_adapter.url) as call:
+        reply = await call.say("Can I talk to a real person?")
+
+        assert faulty_adapter.injected == ["slow POST /callback-requests"]
+        assert reply.startswith(HOLDING_LINE)
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "asked to speak to a person" in filed.reason.lower()
+        assert "call you back" in call.agent_lines[-1]
+        assert call.ended

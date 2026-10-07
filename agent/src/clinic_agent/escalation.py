@@ -13,6 +13,8 @@ from pipecat.frames.frames import TTSSpeakFrame
 
 from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter
+from clinic_agent.holding import with_holding_line
+from clinic_agent.timeouts import tool_timeout
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,7 @@ COULD_NOT_FILE_CALLBACK_REQUEST = (
 
 # A write that times out may still have landed. A second Callback Request is better than none.
 FILING_ATTEMPTS = 2
-FILING_TIMEOUT_SECS = 15  # the adapter times out after 5 s, so two attempts fit
+FILING_TIMEOUT_SECS = tool_timeout(FILING_ATTEMPTS)
 
 EMERGENCY_SIGNS = (
     "chest pain, trouble breathing, signs of a stroke, severe bleeding, a possible overdose or poisoning, "
@@ -111,7 +113,7 @@ def _handoff_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             }
         },
         required=["reason"],
-        handler=handle_handoff,
+        handler=with_holding_line(handle_handoff),
         cancel_on_interruption=False,
         timeout_secs=FILING_TIMEOUT_SECS,
     )
