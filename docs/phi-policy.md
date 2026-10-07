@@ -54,7 +54,7 @@ What stays readable: Provider names, appointment days and times, Visit Types, pa
 | Field | Value |
 |---|---|
 | `time` | When the attempt finished, UTC, ISO 8601 |
-| `action` | `book`, `reschedule`, `cancel`, `callback_request` or `emergency_callback_request` |
+| `action` | `book`, `reschedule`, `cancel`, `release_slot` (freeing the Slot of a Book or Reschedule given up as failed), `callback_request` or `emergency_callback_request` |
 | `patient_id` | The Verified Patient's EHR id, or null for a Callback Request before verification |
 | `idempotency_key` | The key made for the Read-back, the same on every attempt of one write. Null for Callback Requests |
 | `appointment_id`, `slot_id` | What the write changed, when known |
