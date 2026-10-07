@@ -11,6 +11,7 @@ from loguru import logger
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 from pipecat.frames.frames import TTSSpeakFrame
 
+from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter
 
 
@@ -134,16 +135,26 @@ def _emergency_redirect_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
 
 
 async def _file_callback_request(ehr: EhrAdapter, flow_manager: FlowManager, reason: str, *, emergency: bool) -> bool:
+    patient_id = flow_manager.state.get("patient_id")
+    write = Write("emergency_callback_request" if emergency else "callback_request", patient_id)
     for attempt in range(1, FILING_ATTEMPTS + 1):
+        outcome, error = "error", None
         try:
             await ehr.create_callback_request(
                 phone_number=flow_manager.state["caller_phone"],
                 reason=reason,
                 emergency=emergency,
-                patient_id=flow_manager.state.get("patient_id"),
+                patient_id=patient_id,
             )
+            outcome = "succeeded"
             return True
-        except httpx.HTTPError as error:
-            logger.warning(f"Callback Request attempt {attempt} failed: {type(error).__name__}")
+        except httpx.HTTPError as failure:
+            outcome, error = "failed", type(failure).__name__
+            logger.warning(f"Callback Request attempt {attempt} failed: {error}")
+        except BaseException as raised:
+            error = type(raised).__name__
+            raise
+        finally:
+            ehr.audit_log.record(write, attempt=attempt, outcome=outcome, reason=error)
     logger.error("Callback Request could not be filed")
     return False

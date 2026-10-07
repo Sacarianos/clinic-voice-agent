@@ -9,6 +9,7 @@ from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.llm_service import LLMService
 from pipecat.transcriptions.language import Language
 
+from clinic_agent.audit import AuditLog
 from clinic_agent.clinic import PROVIDER_NAMES
 from clinic_agent.config import require
 from clinic_agent.conversation import ROLE
@@ -29,6 +30,7 @@ def phone_services(env: Mapping[str, str]) -> Callable[[], VoiceServices]:
     deepgram_key = require(env, "DEEPGRAM_API_KEY", "Deepgram speech-to-text and text-to-speech")
     create_llm(env, system_instruction=ROLE)
     ehr_adapter_url = env.get("EHR_ADAPTER_URL") or DEFAULT_EHR_ADAPTER_URL
+    audit_log = AuditLog.from_env(env)
 
     def make_services() -> VoiceServices:
         return VoiceServices(
@@ -44,7 +46,7 @@ def phone_services(env: Mapping[str, str]) -> Callable[[], VoiceServices]:
                 api_key=deepgram_key,
                 settings=DeepgramTTSService.Settings(voice="aura-2-helena-en"),
             ),
-            ehr=EhrAdapter(ehr_adapter_url),
+            ehr=EhrAdapter(ehr_adapter_url, audit_log),
         )
 
     return make_services

@@ -17,6 +17,7 @@ from faulty_adapter import FaultyAdapter
 from langfuse_stand_in import FakeLangfuse
 from opentelemetry import trace
 
+from clinic_agent.audit import AuditLog
 from clinic_agent.conversation import ROLE
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.llm import create_llm
@@ -74,6 +75,20 @@ def _ehr_ready():
             )
         if pending:
             time.sleep(2)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _audit_log_path(tmp_path_factory):
+    """Keeps every test's audit log entries out of the working directory. Tests tell theirs apart by patient id."""
+    path = tmp_path_factory.mktemp("audit") / "audit-log.jsonl"
+    os.environ["AUDIT_LOG_PATH"] = str(path)
+    yield
+    del os.environ["AUDIT_LOG_PATH"]
+
+
+@pytest.fixture
+def audit_log() -> AuditLog:
+    return AuditLog.from_env(os.environ)
 
 
 @pytest.fixture(scope="session")
