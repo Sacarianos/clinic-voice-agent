@@ -70,3 +70,29 @@ async def test_a_handoff_that_could_not_be_filed_never_promises_a_callback(start
         assert call.agent_lines[-1] == COULD_NOT_FILE_CALLBACK_REQUEST
         assert "call you back" not in call.agent_lines[-1]
         assert call.ended
+
+
+async def test_a_proxy_caller_who_gives_someone_elses_details_is_handed_off_without_verifying_them(ehr, start_call):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Beatrix", family="Lindqvist", birth_date=born)
+
+    async with start_call(
+        [
+            "I'd be happy to help. Can I get your mother's full name and date of birth?",
+            verify("Beatrix", "Lindqvist", born, caller_is_the_patient=False),
+        ]
+    ) as call:
+        await call.converse(
+            [
+                "Hi, I'm calling to book a checkup for my mother.",
+                f"Her name is Beatrix Lindqvist, born {spoken(born)}.",
+            ]
+        )
+
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "on behalf of someone else" in filed.reason.lower()
+        assert filed.patient_id is None
+        assert {"status": "verified"} not in call.tool_results("verify_patient")
+        assert not [tools for tools in call.offered_tools if "find_slots" in tools]
+        assert call.ended
+        assert call.state == "handoff"

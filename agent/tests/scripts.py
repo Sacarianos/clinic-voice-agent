@@ -11,10 +11,15 @@ def spoken(iso_date: str) -> str:
     return f"{day:%B} {day.day}, {day.year}"
 
 
-def verify(given_name: str, family_name: str, date_of_birth: str) -> CallTool:
+def verify(given_name: str, family_name: str, date_of_birth: str, *, caller_is_the_patient: bool = True) -> CallTool:
     return CallTool(
         "verify_patient",
-        {"given_name": given_name, "family_name": family_name, "date_of_birth": date_of_birth},
+        {
+            "given_name": given_name,
+            "family_name": family_name,
+            "date_of_birth": date_of_birth,
+            "caller_is_the_patient": caller_is_the_patient,
+        },
     )
 
 
