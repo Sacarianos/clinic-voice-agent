@@ -11,7 +11,7 @@ from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
 from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import HandoffReason, escalation_tools, handoff
+from clinic_agent.escalation import HANDOFF_REASONS, HandoffReason, escalation_tools, handoff
 from clinic_agent.phi import PHI, PHONE
 from clinic_agent.pipeline import Call
 
@@ -111,6 +111,12 @@ def _verify_identity_node(opening_line: str, ehr: EhrAdapter) -> NodeConfig:
 
 def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
     async def verify_patient(args: dict, flow_manager: FlowManager):
+        caller_is_the_patient = args.get("caller_is_the_patient")
+        if not isinstance(caller_is_the_patient, bool):
+            return {"status": "error", "error": "caller_is_the_patient must be true or false"}, None
+        if not caller_is_the_patient:
+            # A Proxy Caller's details are someone else's. They never reach the EHR, so no record is verified or linked.
+            return {"status": "proxy_caller"}, await handoff(ehr, flow_manager, HANDOFF_REASONS["proxy_caller"])
         verification = await ehr.verify_patient(
             given_name=args["given_name"],
             family_name=args["family_name"],
@@ -135,8 +141,16 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             "given_name": {"type": "string", "description": "The caller's first name"},
             "family_name": {"type": "string", "description": "The caller's last name, as said or spelled"},
             "date_of_birth": {"type": "string", "description": "Date of birth as YYYY-MM-DD"},
+            "caller_is_the_patient": {
+                "type": "boolean",
+                "description": (
+                    "False if the caller has said they are calling for someone else, such as a parent, child, "
+                    "partner or a person they care for, and these are that person's details. True only when "
+                    "the details are the caller's own."
+                ),
+            },
         },
-        required=["given_name", "family_name", "date_of_birth"],
+        required=["given_name", "family_name", "date_of_birth", "caller_is_the_patient"],
         handler=verify_patient,
         # A read: if the Caller talks over it, drop it rather than answer a question they moved past.
         cancel_on_interruption=True,
