@@ -74,6 +74,8 @@ The adapter answers every request within `REQUEST_DEADLINE_MS` (4000 unless set)
 
 A write that lands only in part is safe and can be finished. Each write takes its new Slot before pointing an Appointment at it, and ends an Appointment before freeing its Slot, so a half-applied write never leaves a booked Appointment in a free Slot. A Slot a write takes records the write's idempotency key, so the same write sent again treats that busy Slot as its own and completes. Cancelling again frees a Slot still held for the cancelled Appointment.
 
+`POST /slots/<slotId>/release` with `{ "idempotencyKey": "<uuid>" }` settles a Book or Reschedule that the agent gives up on after an `unknown` answer. The write may have landed in part, leaving the Slot busy, or may still be on its way to HAPI. Release frees the Slot if that write holds it, and changes the Slot either way, so a write still on its way, guarded by the Slot version it read, can never commit. It answers `succeeded` when the write holds the Slot no longer and never will, and `rejected` with `write_landed` when the write landed in full and holds the Slot with a booked Appointment. An unknown Slot is `rejected` with `slot_not_found`.
+
 Fault injection makes HAPI misbehave on purpose. Send `x-inject-fault: <fault>` on any request, or set `INJECT_FAULT=<fault>` to apply it to every request:
 
 - `timeout`: HAPI applies each write but answers after the FHIR timeout. Writes answer `unknown`, and the write is in FHIR.
