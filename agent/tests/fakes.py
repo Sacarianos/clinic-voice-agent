@@ -1,9 +1,12 @@
 """Stand-ins for Deepgram and the LLM so a call runs without network or API keys."""
 
+import uuid
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 
 from pipecat.frames.frames import (
     Frame,
+    FunctionCallFromLLM,
     LLMContextFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
@@ -16,10 +19,18 @@ from pipecat.services.settings import LLMSettings, TTSSettings
 from pipecat.services.tts_service import TTSService
 
 
-class ScriptedLLM(LLMService):
-    """Answers each LLM run with the next scripted line."""
+@dataclass(frozen=True)
+class CallTool:
+    """A scripted LLM step that calls a tool instead of speaking."""
 
-    def __init__(self, lines: list[str]):
+    name: str
+    arguments: dict = field(default_factory=dict)
+
+
+class ScriptedLLM(LLMService):
+    """Answers each LLM run with the next scripted step: a line to speak or a CallTool."""
+
+    def __init__(self, steps: list[str | CallTool]):
         super().__init__(
             settings=LLMSettings(
                 model="scripted",
@@ -35,16 +46,28 @@ class ScriptedLLM(LLMService):
                 user_turn_completion_config=None,
             )
         )
-        self.lines = list(lines)
+        self.steps = list(steps)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if not isinstance(frame, LLMContextFrame):
             await self.push_frame(frame, direction)
             return
-        line = self.lines.pop(0) if self.lines else "(script exhausted)"
+        step = self.steps.pop(0) if self.steps else "(script exhausted)"
         await self.push_frame(LLMFullResponseStartFrame())
-        await self.push_frame(LLMTextFrame(line))
+        if isinstance(step, CallTool):
+            await self.run_function_calls(
+                [
+                    FunctionCallFromLLM(
+                        function_name=step.name,
+                        tool_call_id=f"call_{uuid.uuid4().hex[:8]}",
+                        arguments=step.arguments,
+                        context=frame.context,
+                    )
+                ]
+            )
+        else:
+            await self.push_frame(LLMTextFrame(step))
         await self.push_frame(LLMFullResponseEndFrame())
 
 
