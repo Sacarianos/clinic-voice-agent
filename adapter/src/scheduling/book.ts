@@ -1,14 +1,15 @@
 import type { Appointment, Bundle, Slot } from "fhir/r4";
-import { bookingWindow, IDEMPOTENCY_KEY_SYSTEM, isInBookingWindow } from "../clinic.ts";
+import { IDEMPOTENCY_KEY_SYSTEM } from "../clinic.ts";
 import { EhrUnavailableError, type FhirClient } from "../fhir/client.ts";
 import type { WriteOutcome } from "../write-outcome.ts";
 import {
   appointmentDetails,
-  scheduleIdOf,
   slotIdOf,
+  slotToTake,
   VISIT_TYPE_SYSTEM,
   VISIT_TYPES,
   type AppointmentDetails,
+  type SlotRejection,
   type VisitType,
 } from "./appointments.ts";
 import { loadProviders, type Providers } from "./providers.ts";
@@ -21,7 +22,7 @@ export type BookRequest = {
   idempotencyKey: string;
 };
 
-export type BookRejection = "slot_taken" | "slot_not_found" | "outside_booking_window";
+export type BookRejection = SlotRejection;
 
 export type BookResult = WriteOutcome<{ appointment: AppointmentDetails }, BookRejection>;
 
@@ -35,14 +36,10 @@ export async function book(fhir: FhirClient, request: BookRequest, now: Date): P
     const earlier = await bookedWithKey(fhir, request.idempotencyKey);
     if (earlier) return earlier;
 
-    const slot = await fhir.read<Slot>("Slot", request.slotId);
     const providers = await loadProviders(fhir);
-    const provider = slot && providers.bySchedule.get(scheduleIdOf(slot));
-    if (!slot || !provider) return { outcome: "rejected", reason: "slot_not_found" };
-    if (!isInBookingWindow(new Date(slot.start), bookingWindow(now))) {
-      return { outcome: "rejected", reason: "outside_booking_window" };
-    }
-    if (slot.status !== "free") return { outcome: "rejected", reason: "slot_taken" };
+    const taking = await slotToTake(fhir, request.slotId, providers, now);
+    if ("rejection" in taking) return { outcome: "rejected", reason: taking.rejection };
+    const { slot, provider } = taking;
 
     const appointment: Appointment = {
       resourceType: "Appointment",

@@ -1,7 +1,8 @@
 import type { Appointment, Slot } from "fhir/r4";
+import { bookingWindow, isInBookingWindow } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
 import { offeredSlot } from "./find-slots.ts";
-import { loadProviders, type Providers } from "./providers.ts";
+import { loadProviders, type Provider, type Providers } from "./providers.ts";
 
 export const VISIT_TYPES = {
   annual_physical: "Annual physical",
@@ -74,6 +75,23 @@ export function appointmentDetails(appointment: Appointment, slot: Slot, provide
   };
 }
 
-export const slotIdOf = (appointment: Appointment) => appointment.slot?.[0]?.reference?.split("/")[1] ?? "";
+export type SlotRejection = "slot_taken" | "slot_not_found" | "outside_booking_window";
+
+// The Slot a write is about to take and its Provider, or the reason it can't be taken.
+export async function slotToTake(
+  fhir: FhirClient,
+  slotId: string,
+  providers: Providers,
+  now: Date,
+): Promise<{ slot: Slot; provider: Provider } | { rejection: SlotRejection }> {
+  const slot = await fhir.read<Slot>("Slot", slotId);
+  const provider = slot && providers.bySchedule.get(scheduleIdOf(slot));
+  if (!slot || !provider) return { rejection: "slot_not_found" };
+  if (!isInBookingWindow(new Date(slot.start), bookingWindow(now))) return { rejection: "outside_booking_window" };
+  if (slot.status !== "free") return { rejection: "slot_taken" };
+  return { slot, provider };
+}
+
+export const slotIdOf =(appointment: Appointment) => appointment.slot?.[0]?.reference?.split("/")[1] ?? "";
 
 export const scheduleIdOf = (slot: Slot) => slot.schedule.reference?.split("/")[1] ?? "";
