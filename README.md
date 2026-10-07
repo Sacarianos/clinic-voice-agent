@@ -39,6 +39,8 @@ It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "s
 
 `GET /slots` finds free Slots, earliest first. Every filter is optional: `providerId`, `from` and `to` (clinic dates as `YYYY-MM-DD`, both included), `partOfDay` (`morning` starts before noon, `afternoon` at noon or later) and `limit` (3 unless set, at most 20). It only offers Slots inside the Booking Window, from now to the end of the day 14 days from today, clinic time (America/New_York). It answers `{ "slots": [{ "slotId", "providerId", "providerName", "start", "end" }], "bookingWindowLastDay": "2026-10-21" }`, with times in clinic wall-clock time and their UTC offset. An unknown `providerId` gets 400 `unknown_provider`.
 
+`GET /slots/<slotId>` reads one Slot as `{ "slot": { "slotId", "providerId", "providerName", "start", "end", "status" } }`, where `status` is `free` or `busy`. An unknown Slot gets 404 `slot_not_found`. The agent uses it to check what a write did.
+
 `POST /appointments` Books a Slot:
 
 ```
@@ -68,6 +70,19 @@ Every write answers 200 with one of four outcomes, and the agent acts on each di
 - `{ "outcome": "failed" }`: nothing was written, so a retry with the same key is safe.
 - `{ "outcome": "unknown" }`: the request reached HAPI but no answer came back. Read the EHR again before telling the Caller anything.
 
+Each FHIR request gives up after `FHIR_TIMEOUT_MS` (3000 unless set), so a slow EHR turns a write `unknown` instead of holding the call. Keep it below the agent's 5 s timeout on adapter calls.
+
+A write that lands only in part is safe and can be finished. Each write takes its new Slot before pointing an Appointment at it, and ends an Appointment before freeing its Slot, so a half-applied write never leaves a booked Appointment in a free Slot. A Slot a write takes records the write's idempotency key, so the same write sent again treats that busy Slot as its own and completes. Cancelling again frees a Slot still held for the cancelled Appointment.
+
+Fault injection makes HAPI misbehave on purpose. Send `x-inject-fault: <fault>` on any request, or set `INJECT_FAULT=<fault>` to apply it to every request:
+
+- `timeout`: HAPI applies each write but answers after the FHIR timeout. Writes answer `unknown`, and the write is in FHIR.
+- `server_error`: HAPI answers every request with a 500 and applies nothing. Writes answer `failed`, reads `ehr_unavailable`.
+- `slot_taken`: someone else takes the Slot just before a Book or Reschedule commits. They answer `rejected` with `slot_taken`. Cancel takes no Slot and is unaffected.
+- `half_write`: HAPI applies only the first half of a write's transaction and the connection drops. Writes answer `unknown`. Sending the same write again finishes it.
+
+An unknown fault name gets 400 `invalid_request`.
+
 `POST /callback-requests` files a Callback Request as a FHIR Task:
 
 ```
@@ -95,9 +110,11 @@ The voice server lives in `agent/`. Twilio posts each incoming call to `POST /vo
 
 The conversation is a `pipecat.flows` state machine in `agent/src/clinic_agent/conversation.py`. The agent greets the Caller and runs Identity Verification through the adapter before anything else. A name that matches several Patients gets a request to spell the last name. A failed attempt gets the same failure message whatever didn't match, and a second one ends the call with a Handoff message. Once verified, the call moves on to Intent. Each state offers the LLM only its own tools, so nothing past verification can be reached before it (see [ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md)).
 
-Booking lives in `agent/src/clinic_agent/booking.py`. From Intent the agent searches for Slots by Provider, days and part of day, and offers two or three. When the Caller picks one and says what the visit is for, `choose_slot` moves to the Read-back, where the agent itself says the Provider, date, time and Visit Type. Only that state offers `book_appointment`, and it takes no arguments: it books exactly what was read back, under an idempotency key made for that Read-back. Asking for another time during the Read-back goes back to the search without starting over. The agent says the appointment is booked only when the adapter answers `succeeded`. A Slot taken in the meantime gets an apology and new offers. A failed or unknown Book ends the call with a Handoff message for now.
+Booking lives in `agent/src/clinic_agent/booking.py`. From Intent the agent searches for Slots by Provider, days and part of day, and offers two or three. When the Caller picks one and says what the visit is for, `choose_slot` moves to the Read-back, where the agent itself says the Provider, date, time and Visit Type. Only that state offers `book_appointment`, and it takes no arguments: it books exactly what was read back, under an idempotency key made for that Read-back. Asking for another time during the Read-back goes back to the search without starting over. The agent says the appointment is booked only when the adapter answers `succeeded`. A Slot taken in the meantime gets an apology and new offers.
 
-Rescheduling and cancelling live in `agent/src/clinic_agent/appointments.py`. From Intent, `list_appointments` tells the Caller their upcoming appointments. With more than one, the agent asks which. Choosing one to cancel goes to a Read-back of that appointment, the only state that offers `cancel_appointment`. Choosing one to reschedule goes to the same Slot search as booking, and picking a new time goes to a Read-back of the old and new times, the only state that offers `reschedule_appointment`. Neither write takes arguments, and each runs under a key made for its Read-back. A new time taken in the meantime gets an apology and new offers. A failed or unknown change ends the call with a Handoff message for now.
+Rescheduling and cancelling live in `agent/src/clinic_agent/appointments.py`. From Intent, `list_appointments` tells the Caller their upcoming appointments. With more than one, the agent asks which. Choosing one to cancel goes to a Read-back of that appointment, the only state that offers `cancel_appointment`. Choosing one to reschedule goes to the same Slot search as booking, and picking a new time goes to a Read-back of the old and new times, the only state that offers `reschedule_appointment`. Neither write takes arguments, and each runs under a key made for its Read-back. A new time taken in the meantime gets an apology and new offers.
+
+All three writes go through `agent/src/clinic_agent/writes.py`. A `failed` write is sent once more with the same key. After an `unknown` one the agent reads the EHR before saying anything: the Patient's appointments, and for a Cancel the Slot too. If the write is fully in place it counts as done. Otherwise it is sent once more, which also finishes a half-applied write. When the second attempt still fails, or the EHR can't be read to confirm it, the agent makes a Handoff with a Callback Request that says which appointment it was about. It tells the Caller it couldn't book, move or cancel, or that it couldn't confirm, and never that it did. Any tool that calls the EHR speaks a holding line after a second without an answer, and a short reminder every five seconds after that.
 
 The server needs the local EHR stack running and reaches the adapter at `EHR_ADAPTER_URL`, `http://localhost:3000` by default.
 
@@ -125,7 +142,9 @@ In Langfuse, each call is one trace session named by its Twilio CallSid. The `co
 
 Until the PHI masking work lands, traces and debug logs hold the raw transcript. Say only synthetic names and dates on test calls.
 
-Agent tests need no API keys. The conversation tests run whole calls as typed text through the same flow, against the real adapter and HAPI, so start the local EHR stack first. Set `FHIR_BASE_URL` and `EHR_ADAPTER_URL` when they don't listen on ports 8080 and 3000:
+To hear how a call handles a slow or broken EHR, start the stack with a fault for every request, such as `INJECT_FAULT=timeout docker compose -f infra/compose.yaml up -d --wait --build`. Every write then takes the FHIR timeout and comes back `unknown`.
+
+Agent tests need no API keys. The conversation tests run whole calls as typed text through the same flow, against the real adapter and HAPI, so start the local EHR stack first. The failure tests put a small proxy in front of the adapter that adds the fault header to the requests a test picks. Set `FHIR_BASE_URL` and `EHR_ADAPTER_URL` when they don't listen on ports 8080 and 3000:
 
 ```
 cd agent

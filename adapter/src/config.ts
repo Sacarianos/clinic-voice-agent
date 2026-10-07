@@ -7,7 +7,7 @@ const configSchema = z.object({
   // Must stay below the agent's own timeout on adapter calls, so the agent hears unknown instead of nothing.
   FHIR_TIMEOUT_MS: z.coerce.number().int().min(1).default(3000),
   // For testing only: a fault every request meets (see faults.ts).
-  INJECT_FAULT: z.enum(FAULTS).optional(),
+  INJECT_FAULT: z.preprocess((value) => (value === "" ? undefined : value), z.enum(FAULTS).optional()),
 });
 
 export type Config = {
