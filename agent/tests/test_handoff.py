@@ -96,3 +96,32 @@ async def test_a_proxy_caller_who_gives_someone_elses_details_is_handed_off_with
         assert not [tools for tools in call.offered_tools if "find_slots" in tools]
         assert call.ended
         assert call.state == "handoff"
+
+
+async def test_a_patient_who_turns_out_to_be_calling_for_someone_else_is_handed_off_after_verification(
+    ehr, start_call
+):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+
+    async with start_call(
+        [
+            "Happy to help. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            "Thank you, Rosalind. How can I help?",
+            handoff("proxy_caller"),
+        ]
+    ) as call:
+        await call.converse(
+            [
+                "Hi, I need to book something.",
+                f"Rosalind Okonkwo, {spoken(born)}.",
+                "Actually the appointment isn't for me, it's for my husband. Can I book him in?",
+            ]
+        )
+
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "on behalf of someone else" in filed.reason.lower()
+        assert not call.tool_results("book_appointment")
+        assert call.ended
+        assert call.state == "handoff"

@@ -1,6 +1,7 @@
 """Identity Verification, driven through the text transport against the real adapter and HAPI."""
 
 import pytest
+from fakes import CallTool
 from scripts import spoken, verify
 
 from clinic_agent.conversation import (
@@ -118,3 +119,21 @@ async def test_a_name_that_matches_two_patients_gets_a_spelling_request_that_is_
             {"status": "verified"},
         ]
         assert call.state == "intent"
+
+
+@pytest.mark.scripted_only
+async def test_a_verification_that_does_not_say_whose_details_they_are_verifies_nobody(ehr, start_call):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    undeclared = CallTool(
+        "verify_patient", {"given_name": "Rosalind", "family_name": "Okonkwo", "date_of_birth": born}
+    )
+
+    async with start_call(
+        ["Sure. What is your full name and date of birth?", undeclared, "Are those your own details?"]
+    ) as call:
+        await call.converse(["I'd like to book an appointment.", f"Rosalind Okonkwo, {spoken(born)}."])
+
+        assert [result["status"] for result in call.tool_results("verify_patient")] == ["error"]
+        assert call.state == "verify_identity"
+        assert not call.ended
