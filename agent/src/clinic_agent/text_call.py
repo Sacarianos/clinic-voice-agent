@@ -139,6 +139,7 @@ class TextCall:
         return " ".join(self.agent_lines[heard:])
 
     async def converse(self, lines: list[str]) -> None:
+        """Speaks each Caller line in turn, waiting for the agent after each."""
         for line in lines:
             await self.say(line)
 
@@ -161,7 +162,9 @@ class TextCall:
     async def _until(self, awaitable):
         """Awaits it, unless the call ends first. Fails when the agent takes longer than the reply timeout."""
         task = asyncio.ensure_future(awaitable)
-        done, _ = await asyncio.wait({task, self._run}, timeout=self._reply_timeout_secs, return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(
+            {task, self._run}, timeout=self._reply_timeout_secs, return_when=asyncio.FIRST_COMPLETED
+        )
         if task in done:
             return task.result()
         task.cancel()

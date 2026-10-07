@@ -70,9 +70,13 @@ async def test_a_second_failed_attempt_ends_the_call_with_a_handoff_message(ehr,
             verify("Theodora", "Abernathy", second_guess),
         ]
     ) as call:
-        await call.say("I need to cancel an appointment.")
-        await call.say(f"Theodora Abernathy, {spoken(first_guess)}.")
-        await call.say(f"Sorry, it's {spoken(second_guess)}.")
+        await call.converse(
+            [
+                "I need to cancel an appointment.",
+                f"Theodora Abernathy, {spoken(first_guess)}.",
+                f"Sorry, it's {spoken(second_guess)}.",
+            ]
+        )
 
         assert call.tool_results("verify_patient") == [{"status": "not_verified"}] * 2
         assert call.agent_lines[-1] == HANDOFF_AFTER_FAILED_VERIFICATION

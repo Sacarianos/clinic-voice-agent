@@ -32,7 +32,9 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "scripted_only: needs the scripted fake LLM to force a move a real one wouldn't make")
+    config.addinivalue_line(
+        "markers", "scripted_only: needs the scripted fake LLM to force a move a real one wouldn't make"
+    )
 
 
 @pytest.fixture(scope="session")
