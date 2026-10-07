@@ -261,7 +261,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.75" },
+    { name = "anthropic", specifier = ">=1.11.0" },
     { name = "clinic-agent", editable = "../agent" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pyyaml", specifier = ">=6.0.2" },

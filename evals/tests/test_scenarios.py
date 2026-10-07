@@ -84,3 +84,21 @@ caller: {{goal: Book something., twist: None.}}
 
     with pytest.raises(ScenarioError, match=complaint):
         load_scenario(path)
+
+
+def test_a_caller_line_that_names_a_slot_the_scenario_lacks_does_not_load(tmp_path):
+    path = tmp_path / "typo.yaml"
+    path.write_text(
+        """
+summary: Names a Slot it doesn't have.
+patient: {given: Desmond, family: Achterberg}
+provider: {given: Imogen, family: Faraday}
+slots:
+  current: {weekday: 1, at: "10:00"}
+caller: {goal: "Book something on {curent_day}.", twist: None.}
+expect: {appointments: [], handoff: false}
+"""
+    )
+
+    with pytest.raises(ScenarioError, match="curent_day"):
+        load_scenario(path)

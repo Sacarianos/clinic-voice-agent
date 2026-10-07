@@ -9,6 +9,7 @@ as "Thursday, October 8".
 from dataclasses import dataclass
 from datetime import time
 from pathlib import Path
+from string import Formatter
 
 import yaml
 
@@ -92,6 +93,11 @@ def _parse(name: str, data: dict) -> Scenario:
         raise ScenarioError(f"expect.handoff must be true or false, not {expect.get('handoff')!r}")
     if slots and not data.get("provider"):
         raise ScenarioError("Slots need a provider to belong to")
+    names = set(slots) | {f"{label}_day" for label in slots}
+    for line in (data["caller"]["goal"], data["caller"]["twist"]):
+        for _, field, _, _ in Formatter().parse(line):
+            if field is not None and field not in names:
+                raise ScenarioError(f"the Caller's goal or twist names {{{field}}}, but no Slot is labelled that")
     return Scenario(
         name=name,
         summary=data["summary"],

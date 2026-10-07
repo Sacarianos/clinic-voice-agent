@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Eval harness: a simulated Caller talks to the agent through the text transport, and graders score each run."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "anthropic>=0.75",
+    "anthropic>=1.11.0",
     "clinic-agent",
     "httpx>=0.28.1",
     "pyyaml>=6.0.2",
