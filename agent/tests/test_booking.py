@@ -191,7 +191,7 @@ async def test_a_slot_taken_before_the_yes_is_not_claimed_as_booked_and_new_slot
         [rejected] = call.tool_results("book_appointment")
         assert rejected["outcome"] == "rejected"
         assert [slot["time"] for slot in rejected["slots"]] == [f"{spoken_day(clinic_time(1, '10:00'))} at 10 AM"]
-        assert reply.startswith("I'm sorry, that time was just taken.")
+        assert "I'm sorry, that time was just taken." in reply  # a slow EHR adds the holding line first
         assert "booked" not in reply
         assert call.state == "find_slot"
         assert ehr.appointments_of(patient_id) == []

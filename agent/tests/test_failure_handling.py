@@ -13,6 +13,8 @@ from fakes import CallTool
 from faulty_adapter import BOOK, CANCEL, LIST_APPOINTMENTS, RESCHEDULE
 from scripts import spoken, verify
 
+from clinic_agent.holding import HOLDING_LINE
+
 pytestmark = pytest.mark.scripted_only
 
 
@@ -82,6 +84,16 @@ async def test_a_book_that_timed_out_but_landed_is_found_by_re_reading_and_not_s
         [appointment] = ehr.appointments_of(patient_id)
         assert appointment["slot"] == [{"reference": f"Slot/{slot_id}"}]
         assert "booked" in call.agent_lines[-1]
+
+
+async def test_a_slow_book_has_a_holding_line_before_the_answer(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("timeout", into=BOOK)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        reply = await call.say("Yes.")
+
+        assert reply.startswith(HOLDING_LINE)
+        assert "booked" in call.agent_lines[-1]
+        assert call.agent_lines[-1] != HOLDING_LINE
 
 
 async def test_a_half_applied_book_is_found_unfinished_by_re_reading_and_the_retry_finishes_it(

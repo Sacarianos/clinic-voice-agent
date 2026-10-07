@@ -15,7 +15,8 @@ from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 from clinic_agent.booking import VISIT_TYPES, Booking, Exits, spoken_appointment, spoken_time
 from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutcome
 from clinic_agent.escalation import handoff
-from clinic_agent.writes import unsettled, write_until_settled
+from clinic_agent.holding import with_holding_line
+from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
 
@@ -88,7 +89,7 @@ class _Appointments:
             description="Look up the caller's upcoming appointments, to tell them or to reschedule or cancel one.",
             properties={},
             required=[],
-            handler=list_appointments,
+            handler=with_holding_line(list_appointments),
             cancel_on_interruption=True,
             timeout_secs=8,
         )
@@ -159,10 +160,10 @@ class _Appointments:
             description="Cancel exactly the appointment you read back. Call only after the caller clearly says yes to it.",
             properties={},
             required=[],
-            handler=cancel_appointment,
+            handler=with_holding_line(cancel_appointment),
             # A write must not be dropped halfway because the Caller spoke.
             cancel_on_interruption=False,
-            timeout_secs=10,
+            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
         )
 
     def choose_appointment_node(self) -> NodeConfig:
@@ -239,10 +240,10 @@ class _Rescheduling(Booking):
             description="Move the appointment exactly as you read back. Call only after the caller clearly says yes to it.",
             properties={},
             required=[],
-            handler=reschedule_appointment,
+            handler=with_holding_line(reschedule_appointment),
             # A write must not be dropped halfway because the Caller spoke.
             cancel_on_interruption=False,
-            timeout_secs=10,
+            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
         )
 
     def reschedule_read_back_node(self, slot: Slot) -> NodeConfig:

@@ -279,7 +279,7 @@ async def test_a_new_time_taken_before_the_yes_is_not_claimed_as_moved_and_new_t
         [rejected] = call.tool_results("reschedule_appointment")
         assert rejected["outcome"] == "rejected"
         assert [slot["time"] for slot in rejected["slots"]] == [f"{spoken_day(clinic_time(2, '11:00'))} at 11 AM"]
-        assert reply.startswith("I'm sorry, that time was just taken.")
+        assert "I'm sorry, that time was just taken." in reply  # a slow EHR adds the holding line first
         assert call.state == "find_slot"
         assert ehr.appointment(appointment_id)["slot"] == [{"reference": f"Slot/{old_slot}"}]
         assert ehr.slot_status(old_slot) == "busy"

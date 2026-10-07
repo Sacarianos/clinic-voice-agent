@@ -17,7 +17,8 @@ from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
 from clinic_agent.escalation import handoff
-from clinic_agent.writes import unsettled, write_until_settled
+from clinic_agent.holding import with_holding_line
+from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -97,7 +98,7 @@ class Booking:
                 "part_of_day": {"type": "string", "enum": ["morning", "afternoon"]},
             },
             required=[],
-            handler=find_slots,
+            handler=with_holding_line(find_slots),
             cancel_on_interruption=True,
             timeout_secs=8,
         )
@@ -161,10 +162,10 @@ class Booking:
             description="Book exactly what you read back. Call only after the caller clearly says yes to it.",
             properties={},
             required=[],
-            handler=book_appointment,
+            handler=with_holding_line(book_appointment),
             # A write must not be dropped halfway because the Caller spoke.
             cancel_on_interruption=False,
-            timeout_secs=10,
+            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
         )
 
     async def slot_lost(self, slot: Slot, reason: str | None, flow_manager: FlowManager) -> tuple[dict, NodeConfig]:

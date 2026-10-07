@@ -16,6 +16,11 @@ from clinic_agent.escalation import HandoffReason
 
 ATTEMPTS = 2
 
+# Pipecat abandons a tool that runs past its timeout, and a write must never be abandoned mid-way.
+# The worst case is two attempts and their re-reads, each up to the adapter client's 5 s (a Cancel
+# re-reads twice), and then filing the Callback Request (two attempts of 5 s).
+WRITE_TOOL_TIMEOUT_SECS = 45
+
 
 async def write_until_settled(
     write: Callable[[], Awaitable[WriteOutcome]], is_done: Callable[[], Awaitable[bool]]
