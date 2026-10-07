@@ -103,8 +103,11 @@ class Ehr:
         response.raise_for_status()
         return response.json()["status"]
 
-    def appointments_in_slot(self, slot_id: str) -> list[dict]:
-        return self._search("Appointment", {"slot": f"Slot/{slot_id}"})
+    def take_slot(self, slot_id: str) -> None:
+        """Marks the Slot busy, as if another Caller booked it a moment ago."""
+        response = self._fhir.get(f"Slot/{slot_id}")
+        response.raise_for_status()
+        self._fhir.put(f"Slot/{slot_id}", json={**response.json(), "status": "busy"}).raise_for_status()
 
     def appointments_of(self, patient_id: str) -> list[dict]:
         return self._search("Appointment", {"patient": f"Patient/{patient_id}"})
