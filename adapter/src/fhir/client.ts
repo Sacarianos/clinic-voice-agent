@@ -18,7 +18,22 @@ export type FhirClient = {
   searchEach<T extends FhirResource>(resourceType: T["resourceType"], params: SearchParams): AsyncGenerator<T>;
   // Undefined when there is no such resource, or it was deleted.
   read<T extends FhirResource>(resourceType: T["resourceType"], id: string): Promise<T | undefined>;
+  // Runs every entry or none of them. Never throws for the EHR being unavailable: what happened is the result.
+  transaction(bundle: Bundle<FhirResource>): Promise<TransactionResult>;
 };
+
+export type TransactionResult =
+  // Every entry was written. The response bundle has one entry per request entry, in order.
+  | { status: "committed"; response: Bundle }
+  // A version guard (ifMatch) or a racing write stopped it. Nothing was written.
+  | { status: "conflict" }
+  // Nothing was written: the EHR couldn't be reached, or it answered with an error and rolled back.
+  | { status: "failed" }
+  // The request went out but no answer came back. It may or may not have been written.
+  | { status: "unknown" };
+
+// fetch() failed before any of the request reached the EHR.
+const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"]);
 
 export function createFhirClient(options: { baseUrl: string }): FhirClient {
   async function request(method: string, url: string, what: string): Promise<Response> {
@@ -58,6 +73,29 @@ export function createFhirClient(options: { baseUrl: string }): FhirClient {
       if (response.status === 404 || response.status === 410) return undefined;
       if (!response.ok) throw new EhrUnavailableError(`GET ${resourceType} returned ${response.status}`);
       return (await response.json()) as never;
+    },
+
+    async transaction(bundle) {
+      let response: Response;
+      try {
+        response = await fetch(options.baseUrl, {
+          method: "POST",
+          headers: { accept: "application/fhir+json", "content-type": "application/fhir+json" },
+          body: JSON.stringify(bundle),
+        });
+      } catch (error) {
+        const code = ((error as Error).cause as { code?: string } | undefined)?.code;
+        return { status: code && NOT_SENT.has(code) ? "failed" : "unknown" };
+      }
+      if (response.status === 409) return { status: "conflict" };
+      if (response.status >= 500) return { status: "failed" };
+      // Anything else the EHR refuses is a request this adapter should never have built.
+      if (!response.ok) throw new Error(`Transaction returned ${response.status}`);
+      try {
+        return { status: "committed", response: (await response.json()) as Bundle };
+      } catch {
+        return { status: "unknown" };
+      }
     },
   };
 }
