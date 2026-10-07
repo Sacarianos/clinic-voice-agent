@@ -50,3 +50,11 @@ export async function unusedBirthDate(): Promise<string> {
   }
   throw new Error("Could not find an unused date of birth");
 }
+
+// For records the adapter created. They are deleted along with the ones the test file made itself.
+export function deleteAfterTests(resourceType: string, id: string) {
+  createdRecords.push(`${resourceType}/${id}`);
+}
+
+export const readRecord = <T extends FhirResource>(resourceType: T["resourceType"], id: string) =>
+  fhir<T>("GET", `${resourceType}/${id}`);

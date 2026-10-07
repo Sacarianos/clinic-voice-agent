@@ -28,3 +28,14 @@ test("Verify patient answers ehr_unavailable when the EHR can't be reached", asy
   expect(response.status).toBe(502);
   expect(response.body).toEqual({ error: "ehr_unavailable" });
 });
+
+test("Create Callback Request answers ehr_unavailable when the EHR can't be reached", async () => {
+  const response = await adapter.post("/callback-requests", {
+    phoneNumber: "+15555550123",
+    reason: "Caller asked to speak to a person",
+    emergency: false,
+  });
+
+  expect(response.status).toBe(502);
+  expect(response.body).toEqual({ error: "ehr_unavailable" });
+});

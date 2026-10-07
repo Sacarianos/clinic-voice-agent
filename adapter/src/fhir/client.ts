@@ -10,6 +10,7 @@ export class EhrUnavailableError extends Error {
 
 export type FhirClient = {
   search<T extends FhirResource>(resourceType: T["resourceType"], params: Record<string, string>): Promise<T[]>;
+  create<T extends FhirResource>(resource: T): Promise<T & { id: string }>;
 };
 
 export function createFhirClient(options: { baseUrl: string }): FhirClient {
@@ -26,10 +27,26 @@ export function createFhirClient(options: { baseUrl: string }): FhirClient {
     return (await response.json()) as T;
   }
 
+  async function create<T extends FhirResource>(resource: T): Promise<T & { id: string }> {
+    let response: Response;
+    try {
+      response = await fetch(`${options.baseUrl}/${resource.resourceType}`, {
+        method: "POST",
+        headers: { accept: "application/fhir+json", "content-type": "application/fhir+json" },
+        body: JSON.stringify(resource),
+      });
+    } catch (error) {
+      throw new EhrUnavailableError(`POST ${resource.resourceType} failed: ${(error as Error).cause ?? error}`);
+    }
+    if (!response.ok) throw new EhrUnavailableError(`POST ${resource.resourceType} returned ${response.status}`);
+    return (await response.json()) as T & { id: string };
+  }
+
   return {
     async search(resourceType, params) {
       const bundle = await get<Bundle>(resourceType, new URLSearchParams(params).toString());
       return (bundle.entry ?? []).map((entry) => entry.resource as never);
     },
+    create,
   };
 }
