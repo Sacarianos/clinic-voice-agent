@@ -1,0 +1,60 @@
+# What STT writes down when the Caller says `said`. The noise injector garbles Caller lines from this list.
+#
+# source says where an entry came from: `hand-written` for the first guesses below. When a real call
+# shows STT getting a word wrong, add the pair with its call id (for example `call-CA1234`), so the
+# real errors can be told apart from the guesses.
+#
+# Several entries may share a `said`: the injector picks one of them each time it garbles that word.
+
+# Numbers: the teens and the tens sound alike, and day-of-month numbers run together.
+- {category: number, said: thirteen, heard: thirty, source: hand-written}
+- {category: number, said: thirty, heard: thirteen, source: hand-written}
+- {category: number, said: fourteen, heard: forty, source: hand-written}
+- {category: number, said: forty, heard: fourteen, source: hand-written}
+- {category: number, said: fifteen, heard: fifty, source: hand-written}
+- {category: number, said: fifty, heard: fifteen, source: hand-written}
+- {category: number, said: sixteen, heard: sixty, source: hand-written}
+- {category: number, said: sixty, heard: sixteen, source: hand-written}
+- {category: number, said: seventeen, heard: seventy, source: hand-written}
+- {category: number, said: seventy, heard: seventeen, source: hand-written}
+- {category: number, said: eighteen, heard: eighty, source: hand-written}
+- {category: number, said: nineteen, heard: ninety, source: hand-written}
+- {category: number, said: "13", heard: "30", source: hand-written}
+- {category: number, said: "15", heard: "50", source: hand-written}
+- {category: number, said: "17", heard: "70", source: hand-written}
+
+# Weekdays
+- {category: weekday, said: Monday, heard: Sunday, source: hand-written}
+- {category: weekday, said: Sunday, heard: Monday, source: hand-written}
+- {category: weekday, said: Tuesday, heard: Thursday, source: hand-written}
+- {category: weekday, said: Thursday, heard: Tuesday, source: hand-written}
+- {category: weekday, said: Tuesday, heard: Choose day, source: hand-written}
+- {category: weekday, said: Wednesday, heard: Winsday, source: hand-written}
+- {category: weekday, said: Friday, heard: Fry day, source: hand-written}
+
+# Provider names, the clinic's three and the eval scenarios' own.
+- {category: provider, said: Whitfield, heard: Whitfeld, source: hand-written}
+- {category: provider, said: Whitfield, heard: Wittfield, source: hand-written}
+- {category: provider, said: Marcus, heard: Marcos, source: hand-written}
+- {category: provider, said: Szczepanski, heard: Chepanski, source: hand-written}
+- {category: provider, said: Szczepanski, heard: Shepanski, source: hand-written}
+- {category: provider, said: Wojciech, heard: Voytek, source: hand-written}
+- {category: provider, said: Kowalczyk, heard: Kovalchuk, source: hand-written}
+- {category: provider, said: Kowalczyk, heard: Kowalchick, source: hand-written}
+- {category: provider, said: Siobhan, heard: Shivon, source: hand-written}
+- {category: provider, said: Faraday, heard: Ferraday, source: hand-written}
+- {category: provider, said: Imogen, heard: Imagine, source: hand-written}
+- {category: provider, said: Papadopoulos, heard: Papadopolis, source: hand-written}
+- {category: provider, said: Theodora, heard: Theodore, source: hand-written}
+
+# Patient surnames: the eval scenarios' Patients, each as an STT near miss that sounds the same or close.
+- {category: surname, said: Okonkwo, heard: Oconco, source: hand-written}
+- {category: surname, said: Villanueva, heard: Vianueva, source: hand-written}
+- {category: surname, said: Achterberg, heard: Ackerberg, source: hand-written}
+- {category: surname, said: Ferreira, heard: Ferrara, source: hand-written}
+- {category: surname, said: Brennan, heard: Brendan, source: hand-written}
+- {category: surname, said: Raghunathan, heard: Ragunathan, source: hand-written}
+- {category: surname, said: Abernathy, heard: Abernethy, source: hand-written}
+- {category: surname, said: Nakamura, heard: Nakamora, source: hand-written}
+- {category: surname, said: Lindqvist, heard: Lindquist, source: hand-written}
+- {category: surname, said: Ibarra, heard: Ibara, source: hand-written}
