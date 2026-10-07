@@ -1,5 +1,6 @@
 """The agent's side of the EHR adapter's HTTP API. The agent knows nothing about FHIR."""
 
+import asyncio
 import os
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -8,6 +9,7 @@ from typing import Literal
 import httpx
 
 from clinic_agent.audit import AuditLog
+from clinic_agent.timeouts import ADAPTER_REQUEST_TIMEOUT_SECS
 
 DEFAULT_EHR_ADAPTER_URL = "http://localhost:3000"
 
@@ -72,8 +74,14 @@ class EhrAdapter:
         self.base_url = base_url.rstrip("/")
         self.audit_log = audit_log or AuditLog.from_env(os.environ)
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=self.base_url, timeout=5)
+    async def _request(self, method: str, path: str, **options) -> httpx.Response:
+        """Raises httpx.TimeoutException when no answer has arrived within ADAPTER_REQUEST_TIMEOUT_SECS in all."""
+        try:
+            async with asyncio.timeout(ADAPTER_REQUEST_TIMEOUT_SECS):
+                async with httpx.AsyncClient(base_url=self.base_url, timeout=ADAPTER_REQUEST_TIMEOUT_SECS) as client:
+                    return await client.request(method, path, **options)
+        except TimeoutError as timeout:
+            raise httpx.TimeoutException(f"{method} {path}: no answer within {ADAPTER_REQUEST_TIMEOUT_SECS} s") from timeout
 
     async def verify_patient(
         self, *, given_name: str, family_name: str, date_of_birth: str, family_name_spelled: bool = False
@@ -87,8 +95,7 @@ class EhrAdapter:
             "dateOfBirth": date_of_birth,
             "familyNameSpelled": family_name_spelled,
         }
-        async with self._client() as client:
-            response = await client.post("/patients/verify", json=body)
+        response = await self._request("POST", "/patients/verify", json=body)
         response.raise_for_status()
         result = response.json()
         return Verification(status=result["status"], patient_id=result.get("patientId"))
@@ -100,14 +107,12 @@ class EhrAdapter:
         body = {"phoneNumber": phone_number, "reason": reason, "emergency": emergency}
         if patient_id:
             body["patientId"] = patient_id
-        async with self._client() as client:
-            response = await client.post("/callback-requests", json=body)
+        response = await self._request("POST", "/callback-requests", json=body)
         response.raise_for_status()
         return response.json()["callbackRequestId"]
 
     async def providers(self) -> list[Provider]:
-        async with self._client() as client:
-            response = await client.get("/providers")
+        response = await self._request("GET", "/providers")
         response.raise_for_status()
         return [Provider(p["providerId"], p["providerName"]) for p in response.json()["providers"]]
 
@@ -122,8 +127,7 @@ class EhrAdapter:
     ) -> SlotSearch:
         query = {"providerId": provider_id, "from": from_date, "to": to_date, "partOfDay": part_of_day}
         params = {name: value for name, value in query.items() if value} | {"limit": limit}
-        async with self._client() as client:
-            response = await client.get("/slots", params=params)
+        response = await self._request("GET", "/slots", params=params)
         response.raise_for_status()
         result = response.json()
         return SlotSearch(
@@ -135,15 +139,13 @@ class EhrAdapter:
         )
 
     async def slot_is_free(self, slot_id: str) -> bool:
-        async with self._client() as client:
-            response = await client.get(f"/slots/{slot_id}")
+        response = await self._request("GET", f"/slots/{slot_id}")
         response.raise_for_status()
         return response.json()["slot"]["status"] == "free"
 
     async def appointments(self, patient_id: str) -> list[Appointment]:
         """The Patient's upcoming appointments, earliest first."""
-        async with self._client() as client:
-            response = await client.get("/appointments", params={"patientId": patient_id})
+        response = await self._request("GET", "/appointments", params={"patientId": patient_id})
         response.raise_for_status()
         return [
             Appointment(a["appointmentId"], a["slotId"], a["providerName"], datetime.fromisoformat(a["start"]), a["visitType"])
@@ -166,10 +168,17 @@ class EhrAdapter:
         body = {"patientId": patient_id, "idempotencyKey": idempotency_key}
         return await self._write(f"/appointments/{appointment_id}/cancel", body)
 
+    async def release_slot(self, *, slot_id: str, idempotency_key: str) -> WriteOutcome:
+        """Settles a Book or Reschedule given up on after an unknown answer: frees its Slot if the write holds it,
+        and makes sure it never lands later.
+
+        succeeded: the write holds the Slot no longer and never will. rejected with write_landed: it landed in full.
+        """
+        return await self._write(f"/slots/{slot_id}/release", {"idempotencyKey": idempotency_key})
+
     async def _write(self, path: str, body: dict) -> WriteOutcome:
         try:
-            async with self._client() as client:
-                response = await client.post(path, json=body)
+            response = await self._request("POST", path, json=body)
         except httpx.ConnectError:
             return WriteOutcome("failed")
         except httpx.TransportError:

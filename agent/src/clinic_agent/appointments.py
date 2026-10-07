@@ -214,8 +214,11 @@ class _Rescheduling(Booking):
                 listed = await self.ehr.appointments(patient_id)
                 return any(a.appointment_id == appointment_id and a.slot_id == slot.slot_id for a in listed)
 
+            async def release() -> WriteOutcome:
+                return await self.ehr.release_slot(slot_id=slot.slot_id, idempotency_key=idempotency_key)
+
             write = Write("reschedule", patient_id, idempotency_key, appointment_id=appointment_id, slot_id=slot.slot_id)
-            written = await write_until_settled(self.ehr.audit_log, write, reschedule, is_moved)
+            written = await write_until_settled(self.ehr.audit_log, write, reschedule, is_moved, release)
             if written.outcome == "succeeded":
                 moved = (
                     f"Done. Your {VISIT_TYPES[self.appointment.visit_type]} is now on {spoken_time(slot.start)} "
@@ -228,7 +231,7 @@ class _Rescheduling(Booking):
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
             details = f"{_details(self.appointment)}, to {spoken_time(slot.start)} with {slot.provider_name}"
-            reason = unsettled(written, verb="move", done="moved", details=details)
+            reason = unsettled(written, verb="move", done="moved", details=details, slot="the new Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(

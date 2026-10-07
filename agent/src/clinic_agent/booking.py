@@ -149,14 +149,17 @@ class Booking:
             async def is_booked() -> bool:
                 return any(a.slot_id == slot.slot_id for a in await self.ehr.appointments(patient_id))
 
+            async def release() -> WriteOutcome:
+                return await self.ehr.release_slot(slot_id=slot.slot_id, idempotency_key=idempotency_key)
+
             write = Write("book", patient_id, idempotency_key, slot_id=slot.slot_id)
-            written = await write_until_settled(self.ehr.audit_log, write, book, is_booked)
+            written = await write_until_settled(self.ehr.audit_log, write, book, is_booked, release)
             if written.outcome == "succeeded":
                 booked = f"You're all booked: {_details(slot, visit_type)}. Is there anything else I can help with?"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
-            reason = unsettled(written, verb="book", done="booked", details=_details(slot, visit_type))
+            reason = unsettled(written, verb="book", done="booked", details=_details(slot, visit_type), slot="the Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(
