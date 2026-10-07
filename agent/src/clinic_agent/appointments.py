@@ -13,7 +13,9 @@ from typing import ClassVar
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.booking import VISIT_TYPES, Booking, Exits, spoken_appointment, spoken_time
-from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot
+from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutcome
+from clinic_agent.escalation import handoff
+from clinic_agent.writes import unsettled, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
 
@@ -135,18 +137,28 @@ class _Appointments:
         idempotency_key = str(uuid.uuid4())
 
         async def cancel_appointment(args: dict, flow_manager: FlowManager):
-            written = await self.ehr.cancel(
-                patient_id=flow_manager.state["patient_id"],
-                appointment_id=appointment.appointment_id,
-                idempotency_key=idempotency_key,
-            )
+            patient_id = flow_manager.state["patient_id"]
+
+            async def cancel() -> WriteOutcome:
+                return await self.ehr.cancel(
+                    patient_id=patient_id, appointment_id=appointment.appointment_id, idempotency_key=idempotency_key
+                )
+
+            async def is_cancelled() -> bool:
+                listed = await self.ehr.appointments(patient_id)
+                if any(a.appointment_id == appointment.appointment_id for a in listed):
+                    return False
+                return await self.ehr.slot_is_free(appointment.slot_id)
+
+            written = await write_until_settled(cancel, is_cancelled)
             if written.outcome == "succeeded":
                 cancelled = f"Your {_details(appointment)} is cancelled. {ANYTHING_ELSE}"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(cancelled)
             if written.outcome == "rejected":
                 result = {"outcome": "rejected", "reason": written.reason}
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
-            return {"outcome": written.outcome}, self.exits.handoff(CHANGE_FAILED)
+            reason = unsettled(written, verb="cancel", done="cancelled", details=_details(appointment))
+            return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(
             name="cancel_appointment",

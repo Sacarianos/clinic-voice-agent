@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import pytest
 from ehr import clinic_time
 from fakes import CallTool
-from faulty_adapter import BOOK, LIST_APPOINTMENTS
+from faulty_adapter import BOOK, CANCEL, LIST_APPOINTMENTS
 from scripts import spoken, verify
 
 pytestmark = pytest.mark.scripted_only
@@ -139,4 +139,68 @@ async def test_a_book_that_can_never_be_confirmed_hands_off_without_saying_wheth
         assert "could not confirm" in filed.reason.lower()
         assert "couldn't confirm whether your appointment was booked" in reply
         assert "call you back" in reply
+        assert call.ended
+
+
+@asynccontextmanager
+async def at_cancel_read_back(ehr, start_call, adapter_url):
+    """A Verified Patient's call, stopped at the Read-back of a Cancel. Yields (call, appointment_id, slot_id)."""
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faraday = ehr.create_provider(given="Imogen", family="Faraday")
+    appointment_id = ehr.create_appointment(patient_id, faraday, clinic_time(1, "09:00"), "sick_visit")
+    slot_id = ehr.appointment(appointment_id)["slot"][0]["reference"].removeprefix("Slot/")
+    async with start_call(
+        [
+            "Sure. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            CallTool("list_appointments"),
+            CallTool("choose_appointment_to_cancel", {"appointment_id": appointment_id}),
+            CallTool("cancel_appointment"),
+        ],
+        adapter_url=adapter_url,
+    ) as call:
+        await call.converse(["I need to cancel my appointment.", f"Rosalind Okonkwo, {spoken(born)}."])
+        assert call.state == "cancel_read_back"
+        yield call, appointment_id, slot_id
+
+
+async def test_a_half_applied_cancel_is_found_unfinished_by_re_reading_and_the_retry_frees_the_slot(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("half_write", into=CANCEL)
+    async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):
+        await call.say("Yes.")
+
+        assert faulty_adapter.sent(CANCEL) == 2
+        assert call.tool_results("cancel_appointment") == [{"outcome": "succeeded"}]
+        assert ehr.appointment(appointment_id)["status"] == "cancelled"
+        assert ehr.slot_status(slot_id) == "free"
+        assert "cancelled" in call.agent_lines[-1]
+
+
+async def test_a_cancel_that_timed_out_but_landed_is_found_by_re_reading_and_not_sent_again(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("timeout", into=CANCEL)
+    async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):
+        await call.say("Yes.")
+
+        assert faulty_adapter.sent(CANCEL) == 1
+        assert call.tool_results("cancel_appointment") == [{"outcome": "succeeded"}]
+        assert ehr.slot_status(slot_id) == "free"
+        assert "cancelled" in call.agent_lines[-1]
+
+
+async def test_a_cancel_that_fails_twice_hands_off_and_leaves_the_appointment_booked(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("server_error", into=CANCEL, times=2)
+    async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):
+        reply = await call.say("Yes.")
+
+        assert ehr.appointment(appointment_id)["status"] == "booked"
+        assert ehr.slot_status(slot_id) == "busy"
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "could not cancel" in filed.reason.lower()
+        assert "wasn't able to cancel" in reply
+        assert "cancelled" not in reply
         assert call.ended
