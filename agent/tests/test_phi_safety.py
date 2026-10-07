@@ -19,7 +19,7 @@ from ehr import clinic_time
 from fakes import CallTool, RecordingTTS, ScriptedCaller, ScriptedLLM
 from faulty_adapter import CANCEL, RESCHEDULE
 from loguru import logger
-from scripts import handoff, spoken, verify
+from scripts import answer_read_back, handoff, spoken, verify
 from starlette.testclient import TestClient
 from twilio_stream import hang_up, start_media_stream
 
@@ -118,6 +118,7 @@ async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_pa
             CallTool("find_slots", {"provider": faraday.name}),
             "Dr. Faraday has 9 AM tomorrow. What is the visit for?",
             CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
             handoff("asked_for_person"),
         ],
@@ -226,6 +227,7 @@ def test_a_phone_call_that_verifies_and_books_leaves_no_patient_data_in_logs_or_
                     CallTool("find_slots", {"provider": faraday.name}),
                     "Dr. Faraday has 9 AM tomorrow, what is the visit for?",
                     CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
+                    answer_read_back("yes"),
                     CallTool("book_appointment"),
                 ]
             ),

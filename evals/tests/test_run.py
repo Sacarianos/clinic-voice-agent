@@ -47,6 +47,7 @@ async def test_a_scripted_plain_book_passes_every_grader_and_leaves_nothing_behi
                 CallTool("find_slots", {"provider": "Dr. Imogen Faraday", "from_date": day, "to_date": day}),
                 "Dr. Faraday has 9 AM, 11 AM or 3 PM. Which works?",
                 CallTool("choose_slot", {"slot_id": seeded.slot_ids["late"], "visit_type": "annual_physical"}),
+                CallTool("record_read_back_answer", {"answer": "yes"}),
                 CallTool("book_appointment"),
                 "Thanks for calling. Goodbye.",
             ]

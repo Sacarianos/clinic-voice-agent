@@ -11,7 +11,7 @@ import pytest
 from ehr import clinic_time
 from fakes import CallTool
 from faulty_adapter import BOOK, CANCEL, LIST_APPOINTMENTS, RESCHEDULE
-from scripts import spoken, verify
+from scripts import answer_read_back, spoken, verify
 
 from clinic_agent.holding import HOLDING_LINE
 
@@ -32,6 +32,7 @@ async def at_booking_read_back(ehr, start_call, adapter_url):
             CallTool("find_slots", {"provider": faraday.name}),
             "Dr. Faraday has 9 AM tomorrow. What is the visit for?",
             CallTool("choose_slot", {"slot_id": slot_id, "visit_type": "sick_visit"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
         ],
         adapter_url=adapter_url,
