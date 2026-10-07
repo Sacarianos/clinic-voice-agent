@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Config } from "./config.ts";
 import { createFhirClient, EhrUnavailableError } from "./fhir/client.ts";
 import { patientRoutes } from "./patients/routes.ts";
+import { slotRoutes } from "./scheduling/routes.ts";
 
 // Error bodies are always { error: <code> }. Domain results, including a failed verification, are 200s.
 export function createApp(config: Config) {
@@ -10,6 +11,7 @@ export function createApp(config: Config) {
   return new Hono()
     .get("/healthz", (c) => c.json({ ok: true }))
     .route("/patients", patientRoutes(fhir))
+    .route("/slots", slotRoutes(fhir))
     .notFound((c) => c.json({ error: "not_found" }, 404))
     .onError((error, c) => {
       // Only the error's own message is logged. It never includes request bodies.
