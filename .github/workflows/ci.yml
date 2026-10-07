@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+
+jobs:
+  adapter:
+    name: EHR adapter against HAPI
+    runs-on: ubuntu-24.04
+    services:
+      # Empty in-memory HAPI. Adapter tests create the Patients they need.
+      # No health options: the image has no shell, so Docker's --health-cmd can't run in it.
+      # The test run's global setup waits for /fhir/metadata instead.
+      hapi:
+        image: hapiproject/hapi:v8.12.0-2
+        ports:
+          - 8080:8080
+        env:
+          JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m -XX:+UseSerialGC"
+          HAPI_FHIR_FHIR_VERSION: R4
+          HAPI_FHIR_CLIENT_ID_STRATEGY: ANY
+          HAPI_FHIR_REUSE_CACHED_SEARCH_RESULTS_MILLIS: "-1"
+    defaults:
+      run:
+        working-directory: adapter
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: adapter/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: adapter/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+        env:
+          FHIR_BASE_URL: http://localhost:8080/fhir
+      - name: Build the adapter image
+        run: docker build --tag clinic-ehr-adapter .
