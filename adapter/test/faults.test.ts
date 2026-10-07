@@ -72,7 +72,7 @@ describe("server_error", () => {
 
 describe("timeout", () => {
   test("makes a Book unknown, though the EHR applied it", async () => {
-    const impatient = await startAdapter({ fhirTimeoutMs: 500 });
+    const impatient = await startAdapter({ requestDeadlineMs: 2_000 });
     try {
       const slotId = await createSlot(provider, clinicTime(1, "10:00"));
       const idempotencyKey = randomUUID();
@@ -96,7 +96,7 @@ describe("timeout", () => {
 
 describe("stalled_write", () => {
   test("makes a Book unknown, and the Book lands after the adapter answered", async () => {
-    const quick = await startAdapter({ fhirTimeoutMs: 2_000 });
+    const quick = await startAdapter({ requestDeadlineMs: 2_000 });
     try {
       const slotId = await createSlot(provider, clinicTime(1, "10:15"));
       const idempotencyKey = randomUUID();

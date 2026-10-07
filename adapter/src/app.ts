@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { Config } from "./config.ts";
+import { answerWithin, requestDeadline } from "./deadline.ts";
 import { fetchWithFaults, injectFaults } from "./faults.ts";
 import { createFhirClient, EhrUnavailableError } from "./fhir/client.ts";
 import { callbackRequestRoutes } from "./callback-requests/routes.ts";
@@ -10,9 +11,10 @@ import { appointmentRoutes, providerRoutes, slotRoutes } from "./scheduling/rout
 // Error bodies are always { error: <code> }. Domain results, including a failed verification and every
 // write outcome (see write-outcome.ts), are 200s.
 export function createApp(config: Config) {
-  const fhir = createFhirClient({ baseUrl: config.fhirBaseUrl, timeoutMs: config.fhirTimeoutMs, fetch: fetchWithFaults });
+  const fhir = createFhirClient({ baseUrl: config.fhirBaseUrl, signal: requestDeadline, fetch: fetchWithFaults });
 
   return new Hono()
+    .use(answerWithin(config.requestDeadlineMs))
     .use(injectFaults(config.injectFault))
     .get("/healthz", (c) => c.json({ ok: true }))
     .route("/patients", patientRoutes(fhir))
