@@ -10,6 +10,8 @@ from pipecat.frames.frames import (
     LLMContextFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
+    LLMRunFrame,
+    LLMSetToolsFrame,
     LLMTextFrame,
     TTSAudioRawFrame,
 )
@@ -77,6 +79,21 @@ class SilentSTT(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         await self.push_frame(frame, direction)
+
+
+class RunLLMOnceGreeted(FrameProcessor):
+    """Stands in for STT and a Caller who says nothing aloud. The LLM gets one turn once the flow has set its tools."""
+
+    def __init__(self):
+        super().__init__()
+        self._run = True
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        await self.push_frame(frame, direction)
+        if self._run and isinstance(frame, LLMSetToolsFrame):
+            self._run = False
+            await self.push_frame(LLMRunFrame())
 
 
 class RecordingTTS(TTSService):

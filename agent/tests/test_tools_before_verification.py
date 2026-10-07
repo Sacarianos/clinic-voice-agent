@@ -5,7 +5,7 @@ from fakes import CallTool
 from scripts import spoken, verify
 
 
-async def test_before_verification_the_llm_is_offered_only_verify_patient(ehr, start_call):
+async def test_before_verification_the_llm_is_offered_only_verification_and_the_escalation_paths(ehr, start_call):
     born = ehr.unused_birth_date()
     ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
 
@@ -21,7 +21,7 @@ async def test_before_verification_the_llm_is_offered_only_verify_patient(ehr, s
 
         *before_verification, after_verification = call.offered_tools
         assert before_verification
-        assert all(tools == ["verify_patient"] for tools in before_verification)
+        assert all(set(tools) == {"verify_patient", "handoff", "emergency_redirect"} for tools in before_verification)
         assert "verify_patient" not in after_verification
 
 

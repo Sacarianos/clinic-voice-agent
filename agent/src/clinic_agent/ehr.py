@@ -25,3 +25,15 @@ class EhrAdapter:
         response.raise_for_status()
         result = response.json()
         return Verification(status=result["status"], patient_id=result.get("patientId"))
+
+    async def create_callback_request(
+        self, *, phone_number: str, reason: str, emergency: bool, patient_id: str | None = None
+    ) -> str:
+        """Files a Callback Request for clinic staff and returns its id. Raises httpx.HTTPError when it can't."""
+        body = {"phoneNumber": phone_number, "reason": reason, "emergency": emergency}
+        if patient_id:
+            body["patientId"] = patient_id
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=5) as client:
+            response = await client.post("/callback-requests", json=body)
+        response.raise_for_status()
+        return response.json()["callbackRequestId"]

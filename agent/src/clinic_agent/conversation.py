@@ -8,6 +8,7 @@ tool on the LLM directly: a handler registered that way runs whatever the curren
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.ehr import EhrAdapter
+from clinic_agent.escalation import HandoffReason, escalation_tools, handoff
 from clinic_agent.pipeline import Call
 
 CLINIC_NAME = "Cedar Hollow Family Medicine"
@@ -32,7 +33,6 @@ VERIFICATION_FAILED = (
 # Several Patients matched. Spelling settles it, and it doesn't count as a failed attempt.
 SPELL_LAST_NAME = "Thanks. To be sure I find the right record, could you spell your last name for me?"
 
-# TODO(#8): file the Callback Request this message promises.
 HANDOFF_AFTER_FAILED_VERIFICATION = (
     "I'm sorry, I wasn't able to verify your identity. "
     "A member of our staff will call you back to help. Goodbye."
@@ -54,9 +54,18 @@ rescheduling or cancelling an appointment, or a question about the clinic.
 """
 
 
-async def start_conversation(call: Call, ehr: EhrAdapter) -> FlowManager:
-    """Greet the Caller and wait in Identity Verification. Call once the pipeline is running."""
-    flow = FlowManager(llm=call.llm, context_aggregator=call.aggregators, worker=call.worker)
+async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str) -> FlowManager:
+    """Greet the Caller and wait in Identity Verification. Call once the pipeline is running.
+
+    The phone number is where a Callback Request calls back. It is never used to verify anyone.
+    """
+    flow = FlowManager(
+        llm=call.llm,
+        context_aggregator=call.aggregators,
+        worker=call.worker,
+        global_functions=escalation_tools(ehr),
+    )
+    flow.state["caller_phone"] = caller_phone
     await flow.initialize(_verify_identity_node(GREETING, ehr))
     return flow
 
@@ -86,7 +95,8 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             failed = flow_manager.state.get("failed_verifications", 0) + 1
             flow_manager.state["failed_verifications"] = failed
             if failed >= MAX_FAILED_VERIFICATIONS:
-                return {"status": "not_verified"}, _handoff_node(HANDOFF_AFTER_FAILED_VERIFICATION)
+                reason = HandoffReason("Identity Verification failed twice", HANDOFF_AFTER_FAILED_VERIFICATION)
+                return {"status": "not_verified"}, await handoff(ehr, flow_manager, reason)
             return {"status": "not_verified"}, _verify_identity_node(VERIFICATION_FAILED, ehr)
         return {"status": "ambiguous"}, _verify_identity_node(SPELL_LAST_NAME, ehr)
 
@@ -102,7 +112,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         handler=verify_patient,
         # A read: if the Caller talks over it, drop it rather than answer a question they moved past.
         cancel_on_interruption=True,
-        timeout_secs=8,
+        timeout_secs=16,  # a second failure also files the Callback Request
     )
 
 
@@ -111,14 +121,4 @@ def _intent_node() -> NodeConfig:
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],
         "functions": [],
-    }
-
-
-def _handoff_node(message: str) -> NodeConfig:
-    return {
-        "name": "handoff",
-        "task_messages": [],
-        "functions": [],
-        "pre_actions": [{"type": "end_conversation", "text": message}],
-        "respond_immediately": False,
     }

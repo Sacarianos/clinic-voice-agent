@@ -6,9 +6,18 @@ what the clinic holds.
 """
 
 import random
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 import httpx
+
+
+@dataclass(frozen=True)
+class CallbackRequest:
+    id: str
+    reason: str
+    emergency: bool
+    patient_id: str | None
 
 
 class Ehr:
@@ -44,6 +53,30 @@ class Ehr:
             if bundle.json()["total"] == 0:
                 return day.isoformat()
         raise RuntimeError("Could not find an unused date of birth")
+
+    def callback_requests_from(self, phone_number: str) -> list["CallbackRequest"]:
+        """The Callback Requests staff would see for this phone number, newest first."""
+        bundle = self._fhir.get("Task", params={"_sort": "-_lastUpdated", "_count": "100"})
+        bundle.raise_for_status()
+        found = []
+        for entry in bundle.json().get("entry", []):
+            task = entry["resource"]
+            inputs = {item["type"]["text"]: item for item in task.get("input", [])}
+            if inputs.get("callback phone number", {}).get("valueString") == phone_number:
+                reference = task.get("for", {}).get("reference")
+                found.append(
+                    CallbackRequest(
+                        id=task["id"],
+                        reason=task["description"],
+                        emergency=inputs["emergency"]["valueBoolean"],
+                        patient_id=reference.removeprefix("Patient/") if reference else None,
+                    )
+                )
+        return found
+
+    def delete_callback_requests_from(self, phone_number: str) -> None:
+        for request in self.callback_requests_from(phone_number):
+            self._fhir.delete(f"Task/{request.id}").raise_for_status()
 
     def delete_created_records(self) -> None:
         while self._created:

@@ -58,7 +58,7 @@ async def test_a_failed_attempt_gets_the_same_failure_message_whatever_was_wrong
         assert not call.ended
 
 
-async def test_a_second_failed_attempt_ends_the_call_with_a_handoff_message(ehr, start_call):
+async def test_a_second_failed_attempt_ends_the_call_with_a_handoff_and_a_callback_request_for_nobody(ehr, start_call):
     born = ehr.unused_birth_date()
     ehr.create_patient(given="Theodora", family="Abernathy", birth_date=born)
     first_guess, second_guess = ehr.unused_birth_date(), ehr.unused_birth_date()
@@ -82,6 +82,10 @@ async def test_a_second_failed_attempt_ends_the_call_with_a_handoff_message(ehr,
         assert call.agent_lines[-1] == HANDOFF_AFTER_FAILED_VERIFICATION
         assert call.ended
         assert call.state != "intent"
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "verification failed" in filed.reason.lower()
+        assert not filed.emergency
+        assert filed.patient_id is None
 
 
 async def test_a_name_that_matches_two_patients_gets_a_spelling_request_that_is_not_a_failed_attempt(ehr, start_call):
