@@ -17,6 +17,7 @@ from datetime import date
 import pytest
 from ehr import clinic_time
 from fakes import CallTool, RecordingTTS, ScriptedCaller, ScriptedLLM
+from faulty_adapter import CANCEL, RESCHEDULE
 from loguru import logger
 from scripts import handoff, spoken, verify
 from starlette.testclient import TestClient
@@ -36,6 +37,7 @@ class PatientDetails:
     family: str
     born: str  # YYYY-MM-DD
     phone: str  # E.164, which is also the number the Patient calls from
+    patient_id: str
 
     @property
     def national_number(self) -> str:
@@ -74,14 +76,10 @@ def found_phi(patient: PatientDetails, output: str) -> list[str]:
 @pytest.fixture
 def patient(ehr) -> PatientDetails:
     # A name no real word or Provider shares, so any hit is a leak.
-    created = PatientDetails(
-        given="Rosalind",
-        family="Okonkwo",
-        born=ehr.unused_birth_date(),
-        phone=f"+1555{random.randrange(10**7):07d}",
-    )
-    ehr.create_patient(given=created.given, family=created.family, birth_date=created.born, phone=created.phone)
-    return created
+    given, family, born = "Rosalind", "Okonkwo", ehr.unused_birth_date()
+    phone = f"+1555{random.randrange(10**7):07d}"
+    patient_id = ehr.create_patient(given=given, family=family, birth_date=born, phone=phone)
+    return PatientDetails(given, family, born, phone, patient_id)
 
 
 @pytest.fixture
@@ -142,6 +140,60 @@ async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_pa
 
     traces = exported_traces(langfuse, call.conversation_id)
     assert "Dr. Imogen Faraday" in traces  # the conversation is in the trace, with patient data masked
+    assert found_phi(patient, traces) == []
+    assert found_phi(patient, logs.getvalue()) == []
+
+
+async def test_rescheduling_and_cancelling_through_injected_faults_leaves_no_patient_data_in_logs_or_traces(
+    ehr, start_call, faulty_adapter, patient, logs, langfuse
+):
+    faraday = ehr.create_provider(given="Imogen", family="Faraday")
+    nine, ten, two_pm = clinic_time(1, "09:00"), clinic_time(1, "10:00"), clinic_time(2, "14:00")
+    to_move = ehr.create_appointment(patient.patient_id, faraday, nine, "annual_physical")
+    to_cancel = ehr.create_appointment(patient.patient_id, faraday, ten, "sick_visit")
+    new_slot = ehr.create_slot(faraday, two_pm)
+    faulty_adapter.inject("half_write", into=RESCHEDULE)
+    faulty_adapter.inject("server_error", into=CANCEL, times=2)
+
+    async with start_call(
+        [
+            "Of course. What is your full name and date of birth?",
+            verify(patient.given, patient.family, patient.born),
+            CallTool("list_appointments"),
+            "You have a 9 AM and a 10 AM with Dr. Faraday tomorrow. Which one?",
+            CallTool("choose_appointment_to_reschedule", {"appointment_id": to_move}),
+            CallTool("find_slots", {"provider": faraday.name, "from_date": two_pm.date().isoformat()}),
+            "Dr. Faraday has 2 PM that day. Would that work?",
+            CallTool("choose_slot", {"slot_id": new_slot}),
+            CallTool("reschedule_appointment"),
+            CallTool("list_appointments"),
+            CallTool("choose_appointment_to_cancel", {"appointment_id": to_cancel}),
+            CallTool("cancel_appointment"),
+        ],
+        adapter_url=faulty_adapter.url,
+        caller_phone=patient.phone,
+        tracing=True,
+    ) as call:
+        await call.converse(
+            [
+                "Hi, I need to change my appointments.",
+                f"{patient.given} {patient.family}, {spoken(patient.born)}.",
+                f"Move the 9 o'clock to the afternoon two days from now. You can reach me on {patient.spoken_number}.",
+                "2 PM is perfect.",
+                "Yes.",
+                f"Now cancel the 10 o'clock for {patient.given} please.",
+                "Yes.",
+            ]
+        )
+
+        assert call.tool_results("reschedule_appointment") == [{"outcome": "succeeded"}]
+        assert call.tool_results("cancel_appointment") == [{"outcome": "failed"}]
+        assert len(faulty_adapter.injected) == 3
+        [filed] = ehr.callback_requests_from(patient.phone)
+        assert call.ended
+
+    traces = exported_traces(langfuse, call.conversation_id)
+    assert "Dr. Imogen Faraday" in traces
     assert found_phi(patient, traces) == []
     assert found_phi(patient, logs.getvalue()) == []
 
