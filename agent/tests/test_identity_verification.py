@@ -1,9 +1,7 @@
 """Identity Verification, driven through the text transport against the real adapter and HAPI."""
 
-from datetime import date
-
 import pytest
-from fakes import CallTool
+from scripts import spoken, verify
 
 from clinic_agent.conversation import (
     GREETING,
@@ -11,19 +9,6 @@ from clinic_agent.conversation import (
     SPELL_LAST_NAME,
     VERIFICATION_FAILED,
 )
-
-
-def spoken(iso_date: str) -> str:
-    """A date of birth the way a Caller says it."""
-    day = date.fromisoformat(iso_date)
-    return f"{day:%B} {day.day}, {day.year}"
-
-
-def verify(given_name: str, family_name: str, date_of_birth: str) -> CallTool:
-    return CallTool(
-        "verify_patient",
-        {"given_name": given_name, "family_name": family_name, "date_of_birth": date_of_birth},
-    )
 
 
 async def test_a_patient_who_gives_their_name_and_date_of_birth_is_verified_and_reaches_intent(ehr, start_call):
