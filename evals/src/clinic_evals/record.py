@@ -16,6 +16,7 @@ class Seeded:
 
     patient_id: str
     birth_date: str  # YYYY-MM-DD, picked so no other Patient has it
+    caller_phone: str  # the number the call comes from, its own so the run finds its Callback Requests
     slot_ids: dict[str, str]
     slot_starts: dict[str, datetime]
     appointment_ids: dict[str, str]

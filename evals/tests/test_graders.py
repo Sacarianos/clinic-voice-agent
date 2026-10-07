@@ -49,6 +49,7 @@ def record(
         seeded=Seeded(
             patient_id="patient-1",
             birth_date="1961-03-03",
+            caller_phone="+15550000001",
             slot_ids={"nine": "slot-9", "ten": "slot-10", "three": "slot-15"},
             slot_starts={"nine": NINE, "ten": TEN, "three": THREE},
             appointment_ids=existing or {},
