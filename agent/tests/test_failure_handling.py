@@ -5,17 +5,21 @@ unknown one before saying anything, and hands off with a Callback Request when i
 confirm the write. It never says a write is done unless the EHR shows it done.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
 from ehr import clinic_time
 from fakes import CallTool
-from faulty_adapter import BOOK, CANCEL, LIST_APPOINTMENTS, RESCHEDULE
-from scripts import answer_read_back, spoken, verify
+from faulty_adapter import BOOK, CALLBACK_REQUEST, CANCEL, LIST_APPOINTMENTS, RESCHEDULE, VERIFY_PATIENT
+from scripts import answer_read_back, handoff, spoken, verify
 
 from clinic_agent.holding import HOLDING_LINE
 
 pytestmark = pytest.mark.scripted_only
+
+# The adapter's stalled_write fault applies a write this long after the adapter gave up on it.
+STALLED_WRITE_LANDS_AFTER_SECS = 3
 
 
 @asynccontextmanager
@@ -112,16 +116,35 @@ async def test_a_half_applied_book_is_found_unfinished_by_re_reading_and_the_ret
         assert "booked" in call.agent_lines[-1]
 
 
-async def test_a_book_half_applied_twice_hands_off_and_says_it_was_not_booked(ehr, start_call, faulty_adapter):
+async def test_a_book_half_applied_twice_frees_its_slot_hands_off_and_says_it_was_not_booked(
+    ehr, start_call, faulty_adapter
+):
     faulty_adapter.inject("half_write", into=BOOK, times=2)
     async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
         reply = await call.say("Yes.")
 
         assert ehr.appointments_of(patient_id) == []
+        assert ehr.slot_status(slot_id) == "free"
         [filed] = ehr.callback_requests_from(call.caller_phone)
         assert "could not book" in filed.reason.lower()
+        assert "the slot is not held" in filed.reason.lower()
         assert "wasn't able to book" in reply
         assert call.ended
+
+
+async def test_a_book_the_ehr_applies_after_the_agent_stopped_waiting_is_never_reported_as_not_booked(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("stalled_write", into=BOOK)
+    faulty_adapter.inject("server_error", into=BOOK)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        reply = await call.say("Yes.")
+        # The adapter gave up on the stalled Book before the agent said anything, so by now it has had its chance to land.
+        await asyncio.sleep(STALLED_WRITE_LANDS_AFTER_SECS + 2)
+
+        assert "wasn't able to book" in reply
+        assert ehr.appointments_of(patient_id) == []
+        assert ehr.slot_status(slot_id) == "free"
 
 
 async def test_when_the_re_read_fails_too_the_retry_with_the_same_key_finds_the_book_that_landed(
@@ -270,6 +293,23 @@ async def test_a_half_applied_reschedule_is_found_unfinished_by_re_reading_and_t
         assert "is now on" in call.agent_lines[-1]
 
 
+async def test_a_reschedule_half_applied_twice_frees_the_new_slot_and_leaves_the_appointment_where_it_was(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("half_write", into=RESCHEDULE, times=2)
+    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, old_slot, new_slot):
+        reply = await call.say("Yes.")
+
+        assert ehr.appointment(appointment_id)["slot"] == [{"reference": f"Slot/{old_slot}"}]
+        assert ehr.slot_status(old_slot) == "busy"
+        assert ehr.slot_status(new_slot) == "free"
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "could not move" in filed.reason.lower()
+        assert "the new slot is not held" in filed.reason.lower()
+        assert "wasn't able to move" in reply
+        assert call.ended
+
+
 async def test_a_reschedule_that_timed_out_but_landed_is_found_by_re_reading_and_not_sent_again(
     ehr, start_call, faulty_adapter
 ):
@@ -326,3 +366,37 @@ async def test_a_slot_taken_just_before_the_book_is_explained_and_not_retried(eh
         assert "that time was just taken" in reply
         assert ehr.appointments_of(patient_id) == []
         assert call.state == "find_slot"
+
+
+async def test_a_slow_identity_verification_has_a_holding_line_before_the_answer(ehr, start_call, faulty_adapter):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faulty_adapter.inject("slow", into=VERIFY_PATIENT)
+    async with start_call(
+        [
+            "Sure. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            "Thank you, Rosalind. How can I help?",
+        ],
+        adapter_url=faulty_adapter.url,
+    ) as call:
+        await call.say("I'd like an appointment.")
+        reply = await call.say(f"Rosalind Okonkwo, {spoken(born)}.")
+
+        assert faulty_adapter.injected == ["slow POST /patients/verify"]
+        assert reply.startswith(HOLDING_LINE)
+        assert call.agent_lines[-1] == "Thank you, Rosalind. How can I help?"
+        assert call.state == "intent"
+
+
+async def test_a_slow_callback_request_has_a_holding_line_before_the_goodbye(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("slow", into=CALLBACK_REQUEST)
+    async with start_call([handoff("asked_for_person")], adapter_url=faulty_adapter.url) as call:
+        reply = await call.say("Can I talk to a real person?")
+
+        assert faulty_adapter.injected == ["slow POST /callback-requests"]
+        assert reply.startswith(HOLDING_LINE)
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "asked to speak to a person" in filed.reason.lower()
+        assert "call you back" in call.agent_lines[-1]
+        assert call.ended

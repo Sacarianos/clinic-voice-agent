@@ -18,7 +18,7 @@ const logged: string[] = [];
 beforeAll(async () => {
   birthDate = await unusedBirthDate();
   patientId = await createPatient({ given: [given], family, birthDate });
-  adapter = await startAdapter({ fhirTimeoutMs: 500 });
+  adapter = await startAdapter({ requestDeadlineMs: 2_000 });
   unreachable = await startAdapter({ fhirBaseUrl: "http://127.0.0.1:9/fhir" });
   for (const level of ["log", "info", "warn", "error", "debug", "trace"] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {

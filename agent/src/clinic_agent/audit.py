@@ -19,7 +19,7 @@ from typing import Literal
 
 DEFAULT_AUDIT_LOG_PATH = "audit-log.jsonl"
 
-Action = Literal["book", "reschedule", "cancel", "callback_request", "emergency_callback_request"]
+Action = Literal["book", "reschedule", "cancel", "release_slot", "callback_request", "emergency_callback_request"]
 
 
 @dataclass(frozen=True)

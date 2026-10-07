@@ -11,9 +11,11 @@ from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
 from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import HANDOFF_REASONS, HandoffReason, escalation_tools, handoff
+from clinic_agent.escalation import FILING_ATTEMPTS, HANDOFF_REASONS, HandoffReason, escalation_tools, handoff
+from clinic_agent.holding import with_holding_line
 from clinic_agent.phi import PHI, PHONE
 from clinic_agent.pipeline import Call
+from clinic_agent.timeouts import tool_timeout
 
 CLINIC_NAME = "Cedar Hollow Family Medicine"
 
@@ -171,10 +173,11 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             },
         },
         required=["given_name", "family_name", "date_of_birth", "caller_is_the_patient"],
-        handler=verify_patient,
+        handler=with_holding_line(verify_patient),
         # A read: if the Caller talks over it, drop it rather than answer a question they moved past.
         cancel_on_interruption=True,
-        timeout_secs=16,  # a second failure also files the Callback Request
+        # The verification, then either the Providers for the intent node or the Callback Request of a Handoff.
+        timeout_secs=tool_timeout(1 + max(1, FILING_ATTEMPTS)),
     )
 
 

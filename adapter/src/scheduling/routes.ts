@@ -7,6 +7,7 @@ import { book } from "./book.ts";
 import { cancel } from "./cancel.ts";
 import { findSlots, readSlot } from "./find-slots.ts";
 import { loadProviders } from "./providers.ts";
+import { releaseSlot } from "./release-slot.ts";
 import { reschedule } from "./reschedule.ts";
 
 export function providerRoutes(fhir: FhirClient) {
@@ -34,8 +35,13 @@ export function slotRoutes(fhir: FhirClient) {
     .get("/:slotId", async (c) => {
       const slot = await readSlot(fhir, c.req.param("slotId"));
       return slot ? c.json({ slot }) : c.json({ error: "slot_not_found" }, 404);
-    });
+    })
+    .post("/:slotId/release", validJson(releaseSlotBody), async (c) =>
+      c.json(await releaseSlot(fhir, c.req.param("slotId"), c.req.valid("json").idempotencyKey)),
+    );
 }
+
+const releaseSlotBody = z.object({ idempotencyKey: z.string().min(8).max(64) });
 
 const bookBody = z.object({
   patientId: z.string().min(1),
