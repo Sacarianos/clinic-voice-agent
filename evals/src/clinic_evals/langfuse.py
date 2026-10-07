@@ -10,6 +10,7 @@ call tracing. Langfuse's older batch ingestion API is being retired, so it isn't
 
 import json
 import secrets
+import time
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -17,6 +18,10 @@ import httpx
 
 from clinic_agent.tracing import DEFAULT_LANGFUSE_BASE_URL
 from clinic_evals.graders import Grade
+
+
+# The Hobby tier rate-limits the scores API, and a batch posts several scores per run.
+ATTEMPTS = 5
 
 
 class LangfuseError(RuntimeError):
@@ -80,7 +85,7 @@ class Langfuse:
                 "comment": grade.reason,
                 "metadata": {"config": config, "scenario": scenario},
             }
-            self._http.post("/api/public/scores", json=score).raise_for_status()
+            self._post("/api/public/scores", score)
         return trace_id
 
     def _send_span(self, span: dict) -> None:
@@ -92,11 +97,21 @@ class Langfuse:
                 }
             ]
         }
-        response = self._http.post("/api/public/otel/v1/traces", json=body)
-        response.raise_for_status()
+        response = self._post("/api/public/otel/v1/traces", body)
         rejected = (response.json() or {}).get("partialSuccess", {}).get("rejectedSpans")
         if rejected:
             raise LangfuseError(f"Langfuse rejected the run's trace: {response.json()['partialSuccess']}")
+
+    def _post(self, path: str, body: dict) -> httpx.Response:
+        """Posts it, waiting and sending it again while Langfuse says it is busy."""
+        for attempt in range(ATTEMPTS):
+            response = self._http.post(path, json=body)
+            busy = response.status_code == 429 or response.is_server_error
+            if not busy or attempt == ATTEMPTS - 1:
+                break
+            time.sleep(float(response.headers.get("retry-after", 2**attempt)))
+        response.raise_for_status()
+        return response
 
     def close(self) -> None:
         self._http.close()
