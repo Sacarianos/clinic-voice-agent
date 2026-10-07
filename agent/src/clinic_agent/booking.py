@@ -16,19 +16,14 @@ from zoneinfo import ZoneInfo
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
-from clinic_agent.writes import write_until_settled
+from clinic_agent.escalation import handoff
+from clinic_agent.writes import unsettled, write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 
 VISIT_TYPES = {"annual_physical": "annual physical", "sick_visit": "sick visit", "follow_up": "follow-up"}
 
 SLOT_GONE = "I'm sorry, that time was just taken."
-
-# TODO(#10): retry a failed Book once with the same key, reconcile an unknown one, and file the Callback Request.
-BOOKING_FAILED = (
-    "I'm sorry, I wasn't able to finish booking that appointment. "
-    "A member of our staff will call you back to help. Goodbye."
-)
 
 FIND_SLOT_TASK = """\
 Offer the caller the open times find_slots just returned: two or three at most, each with the
@@ -156,7 +151,8 @@ class Booking:
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
-            return {"outcome": written.outcome}, self.exits.handoff(BOOKING_FAILED)
+            reason = unsettled(written, verb="book", done="booked", details=_details(slot, visit_type))
+            return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(
             name="book_appointment",

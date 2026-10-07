@@ -51,3 +51,21 @@ async def test_a_failed_book_is_retried_once_with_the_same_key_and_booked_once(e
         assert ehr.slot_status(slot_id) == "busy"
         assert "booked" in call.agent_lines[-1]
         assert ehr.callback_requests_from(call.caller_phone) == []
+
+
+async def test_a_book_that_fails_twice_hands_off_with_a_callback_request_and_claims_nothing(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("server_error", into=BOOK, times=2)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        reply = await call.say("Yes.")
+
+        assert len(faulty_adapter.injected) == 2
+        assert call.tool_results("book_appointment") == [{"outcome": "failed"}]
+        assert ehr.appointments_of(patient_id) == []
+        assert ehr.slot_status(slot_id) == "free"
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert filed.patient_id == patient_id
+        assert "could not book" in filed.reason.lower()
+        assert "wasn't able to book" in reply
+        assert "call you back" in reply
+        assert "booked" not in reply
+        assert call.ended
