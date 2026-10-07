@@ -78,6 +78,14 @@ what they need or for their details first:
   only from what it returns. Never answer from memory. Then go back to asking for what you still need.
 """
 
+# Without its own task, Haiku often took a spelled-out name for a caller who isn't a patient yet and handed off.
+SPELLING_TASK = """\
+The caller's name matched more than one of the clinic's records, so you asked them to spell their last name.
+This is not a failed attempt, and it says nothing about whether they are a patient here.
+As soon as they have spelled it, call verify_patient again with the same first name and date of birth, and
+the last name written out from the letters they spelled (S, M, I, T, H is SMITH). Don't read it back first.
+"""
+
 INTENT_TASK = """\
 The caller is now a Verified Patient. Help them with what they called about: booking,
 rescheduling or cancelling an appointment, or a question about the clinic.
@@ -104,12 +112,12 @@ async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str) -> 
     return flow
 
 
-def _verify_identity_node(opening_line: str, ehr: EhrAdapter) -> NodeConfig:
+def _verify_identity_node(opening_line: str, ehr: EhrAdapter, task: str = VERIFY_IDENTITY_TASK) -> NodeConfig:
     return {
         "name": "verify_identity",
         "role_message": ROLE,
         "pre_actions": [{"type": "tts_say", "text": opening_line}],
-        "task_messages": [{"role": "developer", "content": VERIFY_IDENTITY_TASK}],
+        "task_messages": [{"role": "developer", "content": task}],
         "functions": [_verify_patient_tool(ehr)],
         "respond_immediately": False,
     }
@@ -144,7 +152,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         if spelled:
             return {"status": "ambiguous"}, await handoff(ehr, flow_manager, AMBIGUOUS_AFTER_SPELLING)
         flow_manager.state["spelling_requested"] = True
-        return {"status": "ambiguous"}, _verify_identity_node(SPELL_LAST_NAME, ehr)
+        return {"status": "ambiguous"}, _verify_identity_node(SPELL_LAST_NAME, ehr, SPELLING_TASK)
 
     return FlowsFunctionSchema(
         name="verify_patient",
