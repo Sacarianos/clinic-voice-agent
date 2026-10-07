@@ -22,10 +22,16 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-# Pipecat imports audioop, which Python 3.12 flags. Harmless until 3.13.
-filterwarnings = ["ignore:'audioop' is deprecated:DeprecationWarning"]
+# A call that never ends would otherwise hang the run.
+timeout = 60
+# Both come from inside pipecat 1.12 at import time, not from our code.
+filterwarnings = [
+    "ignore:'audioop' is deprecated:DeprecationWarning",
+    "ignore:`AudioContextTTSService` is deprecated:DeprecationWarning",
+]
