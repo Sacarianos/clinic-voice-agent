@@ -3,15 +3,16 @@
 import json
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 from pipecat.services.llm_service import LLMService
 
+from clinic_agent.llm import LLM_CONFIGS
 from clinic_evals.caller import Caller
-from clinic_evals.graders import GRADERS, Grade, grade
+from clinic_evals.graders import Grade, grade
 from clinic_evals.langfuse import Langfuse, LangfuseError
 from clinic_evals.record import RunRecord, Seeded
 from clinic_evals.run import run_scenario
@@ -42,6 +43,7 @@ async def run_evals(
     langfuse: Langfuse | None,
     results_dir: Path = RESULTS_DIR,
     reply_timeout_secs: float = 10,
+    noise_rate: float = 0.0,  # only recorded: the caller factory is what applies noise
 ) -> list[RunResult]:
     """Runs one at a time, so runs never share the EHR. Each result is saved and pushed as soon as it is graded."""
     batch_id = f"eval-{config}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
@@ -55,7 +57,7 @@ async def run_evals(
             result = RunResult(batch_id, scenario.name, repeat, record, grade(record), started, datetime.now(UTC))
             results.append(result)
             print(_run_line(result), flush=True)
-            _save(results, config, results_dir / f"{batch_id}.json")
+            _save(results, config, noise_rate, results_dir / f"{batch_id}.json")
             if langfuse:
                 _push(langfuse, result, config)
     return results
@@ -78,29 +80,14 @@ def _push(langfuse: Langfuse, result: RunResult, config: str) -> None:
         print(f"Could not push {result.scenario} run {result.repeat} to Langfuse: {error}", file=sys.stderr)
 
 
-def summary(results: list[RunResult]) -> str:
-    """Pass rate per grader, then every failure with its reason."""
-    lines = ["Pass rate per grader:"]
-    for name in GRADERS:
-        passed = sum(g.passed for r in results for g in r.grades if g.grader == name)
-        lines.append(f"  {name:<38} {passed}/{len(results)}")
-    failures = [(r, g) for r in results for g in r.grades if not g.passed]
-    if failures:
-        lines.append("Failures:")
-        lines += [f"  {r.scenario} run {r.repeat}, {g.grader}: {g.reason}" for r, g in failures]
-    errors = [r for r in results if r.record.error]
-    lines += [f"  {r.scenario} run {r.repeat} stopped early: {r.record.error}" for r in errors]
-    return "\n".join(lines)
-
-
 def _run_line(result: RunResult) -> str:
     failed = [g.grader for g in result.grades if not g.passed]
     verdict = "all graders passed" if not failed else f"failed {', '.join(failed)}"
     return f"{result.scenario} run {result.repeat}: {verdict} ({result.record.ending})"
 
 
-def _save(results: list[RunResult], config: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def batch_document(results: list[RunResult], config: str, noise_rate: float) -> dict:
+    """The saved form of a batch, which the report reads back."""
     runs = [
         {
             "scenario": r.scenario,
@@ -108,10 +95,30 @@ def _save(results: list[RunResult], config: str, path: Path) -> None:
             "ending": r.record.ending,
             "error": r.record.error,
             "grades": [{"grader": g.grader, "passed": g.passed, "reason": g.reason} for g in r.grades],
+            "turn_secs": r.record.turn_secs,
+            "usage": asdict(r.record.usage),
+            "noise": [
+                {"turn": n.turn, "category": n.confusion.category, "said": n.confusion.said, "heard": n.confusion.heard, "source": n.confusion.source}
+                for n in r.record.noise
+            ],
             "transcript": r.record.transcript,
-            "tool_calls": [{"name": c.name, "arguments": c.arguments, "result": c.result} for c in r.record.tool_calls],
+            "tool_calls": [
+                {"name": c.name, "arguments": c.arguments, "result": c.result, "duration_secs": c.duration_secs}
+                for c in r.record.tool_calls
+            ],
         }
         for r in results
     ]
-    document = {"batch_id": results[0].batch_id, "config": config, "runs": runs}
-    path.write_text(json.dumps(document, indent=2, default=str), encoding="utf-8")
+    llm_config = LLM_CONFIGS.get(config)
+    return {
+        "batch_id": results[0].batch_id,
+        "config": config,
+        "model": llm_config.model if llm_config else None,
+        "noise_rate": noise_rate,
+        "runs": runs,
+    }
+
+
+def _save(results: list[RunResult], config: str, noise_rate: float, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(batch_document(results, config, noise_rate), indent=2, default=str), encoding="utf-8")

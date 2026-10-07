@@ -92,9 +92,14 @@ async def test_one_command_runs_each_scenario_three_times_and_pushes_scores_tagg
     assert langfuse.credentials == {"Basic " + base64.b64encode(b"pk-test:sk-test").decode()}
 
     [saved] = tmp_path.glob("*.json")
-    runs = json.loads(saved.read_text())["runs"]
+    document = json.loads(saved.read_text())
+    runs = document["runs"]
+    assert document["noise_rate"] == 0.0
     assert len(runs) == 3
-    assert runs[0]["transcript"][-1] == ["agent", "Of course. I'll have a member of our staff call you back at this number. Goodbye."]
+    assert [len(run["turn_secs"]) for run in runs] == [1, 1, 1]
+    assert runs[0]["tool_calls"][0]["duration_secs"] > 0
+    assert runs[0]["usage"] == {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0}
+    assert runs[0]["transcript"][-1] ==["agent", "Of course. I'll have a member of our staff call you back at this number. Goodbye."]
 
 
 async def test_a_failed_grade_goes_to_langfuse_with_its_reason(ehr_urls, tmp_path):
