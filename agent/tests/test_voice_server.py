@@ -2,8 +2,9 @@ import time
 import xml.etree.ElementTree as ET
 
 import pytest
-from fakes import RecordingTTS, RunLLMOnceGreeted, ScriptedLLM, SilentSTT
-from scripts import handoff
+from ehr import clinic_time
+from fakes import CallTool, RecordingTTS, RunLLMOnceGreeted, ScriptedCaller, ScriptedLLM, SilentSTT
+from scripts import handoff, spoken, verify
 from starlette.testclient import TestClient
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
@@ -153,6 +154,62 @@ def test_a_callback_request_filed_on_a_phone_call_has_the_number_twilio_passed_a
         ehr.delete_callback_requests_from(phone)
 
     assert "asked to speak to a person" in filed.reason.lower()
+
+
+def test_a_caller_verifies_and_books_over_the_phone_through_the_same_conversation_as_text(ehr, ehr_adapter_url):
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faraday = ehr.create_provider(given="Imogen", family="Faraday")
+    nine = clinic_time(1, "09:00")
+    nine_slot = ehr.create_slot(faraday, nine)
+    day = nine.date().isoformat()
+    phone = "+15555550177"
+    caller = ScriptedCaller(
+        [
+            "Hi, I'd like to book an appointment.",
+            f"Rosalind Okonkwo, {spoken(born)}.",
+            f"With {faraday.name}, on {spoken(day)} please.",
+            "Nine o'clock, for my annual physical.",
+            "Yes, that's right.",
+        ]
+    )
+    tts = RecordingTTS()
+    app = _app(
+        lambda: VoiceServices(
+            stt=caller,
+            llm=ScriptedLLM(
+                [
+                    "I can help with that, what is your full name and date of birth?",
+                    verify("Rosalind", "Okonkwo", born),
+                    "Thanks Rosalind, who would you like to see, and when?",
+                    CallTool("find_slots", {"provider": faraday.name, "from_date": day, "to_date": day}),
+                    "Dr. Faraday has 9 AM that day, what is the visit for?",
+                    CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
+                    CallTool("book_appointment"),
+                ]
+            ),
+            tts=tts,
+            ehr=EhrAdapter(ehr_adapter_url),
+        )
+    )
+
+    try:
+        with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
+            start_media_stream(twilio, from_number=phone)
+            [appointment] = _wait_for(lambda: ehr.appointments_of(patient_id), "the booked Appointment")
+            _wait_for(lambda: "booked" in " ".join(tts.spoken), "the agent to say the appointment is booked")
+            hang_up(twilio, app)
+    finally:
+        ehr.delete_callback_requests_from(phone)
+
+    assert caller.lines == []
+    assert appointment["slot"] == [{"reference": f"Slot/{nine_slot}"}]
+    assert appointment["appointmentType"]["coding"][0]["code"] == "annual_physical"
+    assert ehr.slot_status(nine_slot) == "busy"
+    heard = " ".join(sentence.strip() for sentence in tts.spoken)
+    read_back = f"Just to confirm, an annual physical with {faraday.name} on {nine:%A}, {nine:%B} {nine.day} at 9 AM."
+    assert read_back in heard
+    assert heard.index(read_back) < heard.index("You're all booked")
 
 
 def _wait_for(found, what, seconds=10):
