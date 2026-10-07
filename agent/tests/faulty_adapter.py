@@ -29,7 +29,12 @@ class FaultyAdapter:
         self._injections: list[_Injection] = []
         self._runner: web.AppRunner | None = None
         self.url = ""
-        self.injected: list[str] = []  # "<fault> <method> <path>", one per request that carried a fault
+        self.requests: list[str] = []  # "<METHOD> <path>", every request in order
+        self.injected: list[str] = []  # "<fault> <METHOD> <path>", one per request that carried a fault
+
+    def sent(self, request: str) -> int:
+        """How many requests matched `request`, a pattern for "<METHOD> <path>"."""
+        return sum(1 for sent in self.requests if re.search(request, sent))
 
     def inject(self, fault: str, *, into: str, times: int = 1) -> None:
         """Faults the next `times` requests matching `into`, a pattern for "<METHOD> <path>"."""
@@ -51,6 +56,7 @@ class FaultyAdapter:
 
     async def _forward(self, request: web.Request) -> web.Response:
         headers = {"content-type": request.headers.get("content-type", "application/json")}
+        self.requests.append(f"{request.method} {request.path}")
         fault = self._fault_for(f"{request.method} {request.path}")
         if fault:
             headers["x-inject-fault"] = fault

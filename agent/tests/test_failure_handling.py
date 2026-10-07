@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import pytest
 from ehr import clinic_time
 from fakes import CallTool
-from faulty_adapter import BOOK
+from faulty_adapter import BOOK, LIST_APPOINTMENTS
 from scripts import spoken, verify
 
 pytestmark = pytest.mark.scripted_only
@@ -69,3 +69,16 @@ async def test_a_book_that_fails_twice_hands_off_with_a_callback_request_and_cla
         assert "call you back" in reply
         assert "booked" not in reply
         assert call.ended
+
+
+async def test_a_book_that_timed_out_but_landed_is_found_by_re_reading_and_not_sent_again(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("timeout", into=BOOK)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        await call.say("Yes.")
+
+        assert faulty_adapter.sent(BOOK) == 1
+        assert faulty_adapter.sent(LIST_APPOINTMENTS) == 1
+        assert call.tool_results("book_appointment") == [{"outcome": "succeeded"}]
+        [appointment] = ehr.appointments_of(patient_id)
+        assert appointment["slot"] == [{"reference": f"Slot/{slot_id}"}]
+        assert "booked" in call.agent_lines[-1]

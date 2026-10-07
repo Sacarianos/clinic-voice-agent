@@ -145,7 +145,10 @@ class Booking:
                     patient_id=patient_id, slot_id=slot.slot_id, visit_type=visit_type, idempotency_key=idempotency_key
                 )
 
-            written = await write_until_settled(book)
+            async def is_booked() -> bool:
+                return any(a.slot_id == slot.slot_id for a in await self.ehr.appointments(patient_id))
+
+            written = await write_until_settled(book, is_booked)
             if written.outcome == "succeeded":
                 booked = f"You're all booked: {_details(slot, visit_type)}. Is there anything else I can help with?"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)
