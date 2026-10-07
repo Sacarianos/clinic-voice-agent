@@ -29,6 +29,9 @@ VERIFICATION_FAILED = (
     "Could you tell me your full name and date of birth one more time?"
 )
 
+# Several Patients matched. Spelling settles it, and it doesn't count as a failed attempt.
+SPELL_LAST_NAME = "Thanks. To be sure I find the right record, could you spell your last name for me?"
+
 # TODO(#8): file the Callback Request this message promises.
 HANDOFF_AFTER_FAILED_VERIFICATION = (
     "I'm sorry, I wasn't able to verify your identity. "
@@ -84,7 +87,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             if failed >= MAX_FAILED_VERIFICATIONS:
                 return {"status": "not_verified"}, _handoff_node(HANDOFF_AFTER_FAILED_VERIFICATION)
             return {"status": "not_verified"}, _verify_identity_node(VERIFICATION_FAILED, ehr)
-        return {"status": verification.status}, None
+        return {"status": "ambiguous"}, _verify_identity_node(SPELL_LAST_NAME, ehr)
 
     return FlowsFunctionSchema(
         name="verify_patient",
