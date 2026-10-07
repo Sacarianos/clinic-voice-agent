@@ -5,6 +5,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
+from loguru import logger
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
@@ -19,11 +20,13 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
     TTSAudioRawFrame,
 )
+from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import LLMService
 from pipecat.services.settings import LLMSettings, TTSSettings
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.time import time_now_iso8601
+from pipecat.utils.tracing.service_decorators import traced_llm, traced_tts
 
 
 @dataclass(frozen=True)
@@ -35,7 +38,11 @@ class CallTool:
 
 
 class ScriptedLLM(LLMService):
-    """Answers each LLM run with the next scripted step: a line to speak or a CallTool."""
+    """Answers each LLM run with the next scripted step: a line to speak or a CallTool.
+
+    Like a real LLM service, it logs the context it was given at DEBUG level and traces each run as an
+    `llm` span holding the context and its reply, so logs and traces carry what they would on a real call.
+    """
 
     def __init__(self, steps: list[str | CallTool]):
         super().__init__(
@@ -60,6 +67,11 @@ class ScriptedLLM(LLMService):
         if not isinstance(frame, LLMContextFrame):
             await self.push_frame(frame, direction)
             return
+        await self._process_context(frame.context)
+
+    @traced_llm
+    async def _process_context(self, context: LLMContext):
+        logger.debug(f"{self}: Generating chat from context {self.get_llm_adapter().get_messages_for_logging(context)}")
         step = self.steps.pop(0) if self.steps else "(script exhausted)"
         await self.push_frame(LLMFullResponseStartFrame())
         if isinstance(step, CallTool):
@@ -69,7 +81,7 @@ class ScriptedLLM(LLMService):
                         function_name=step.name,
                         tool_call_id=f"call_{uuid.uuid4().hex[:8]}",
                         arguments=step.arguments,
-                        context=frame.context,
+                        context=context,
                     )
                 ]
             )
@@ -140,7 +152,10 @@ class RunLLMOnceGreeted(FrameProcessor):
 
 
 class RecordingTTS(TTSService):
-    """Records the text it is asked to speak and answers with silence, a tenth of a second per sentence by default."""
+    """Records the text it is asked to speak and answers with silence, a tenth of a second per sentence by default.
+
+    Like Deepgram's TTS, it traces each sentence as a `tts` span holding the text.
+    """
 
     def __init__(self, seconds_per_sentence: float = 0.1):
         super().__init__(
@@ -151,6 +166,7 @@ class RecordingTTS(TTSService):
         self.spoken: list[str] = []
         self._seconds_per_sentence = seconds_per_sentence
 
+    @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
         self.spoken.append(text)
         silence = b"\x00\x00" * int(self.sample_rate * self._seconds_per_sentence)

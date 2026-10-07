@@ -60,13 +60,14 @@ class Ehr:
         response.raise_for_status()
         return [entry["resource"] for entry in response.json().get("entry", [])]
 
-    def create_patient(self, *, given: str, family: str, birth_date: str) -> str:
+    def create_patient(self, *, given: str, family: str, birth_date: str, phone: str | None = None) -> str:
         return self._create(
             {
                 "resourceType": "Patient",
                 "active": True,
                 "name": [{"use": "official", "family": family, "given": [given]}],
                 "birthDate": birth_date,
+                **({"telecom": [{"system": "phone", "value": phone, "use": "mobile"}]} if phone else {}),
             }
         )
 

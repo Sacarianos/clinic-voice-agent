@@ -55,10 +55,22 @@ class ToolCall:
 
 
 class TextCall:
-    """Use as `async with TextCall(llm, ehr, caller_phone=...) as call:`. Entering waits for the agent's greeting."""
+    """Use as `async with TextCall(llm, ehr, caller_phone=...) as call:`. Entering waits for the agent's greeting.
 
-    def __init__(self, llm: LLMService, ehr: EhrAdapter, *, caller_phone: str, reply_timeout_secs: float = 10):
+    With tracing on, the call is traced like a phone call, as one conversation keyed by `conversation_id`.
+    """
+
+    def __init__(
+        self,
+        llm: LLMService,
+        ehr: EhrAdapter,
+        *,
+        caller_phone: str,
+        reply_timeout_secs: float = 10,
+        tracing: bool = False,
+    ):
         self.caller_phone = caller_phone
+        self.conversation_id = f"text-{uuid.uuid4()}"
         self.transcript: list[tuple[str, str]] = []  # ("caller" | "agent", line), in order
         self.tool_calls: list[ToolCall] = []
         self.offered_tools: list[list[str]] = []  # tool names the LLM was offered, one list per LLM run
@@ -75,6 +87,9 @@ class TextCall:
             idle_timeout_secs=None,
             enable_rtvi=False,
             observers=[self._watch],
+            enable_tracing=tracing,
+            conversation_id=self.conversation_id,
+            additional_span_attributes={"langfuse.session.id": self.conversation_id},
         )
         self._watch.last_processor = self._call.aggregators.assistant()
         self._flow = None
