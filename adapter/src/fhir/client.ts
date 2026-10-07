@@ -1,6 +1,7 @@
 // The only code in the system that speaks FHIR over HTTP. Everything above it works in domain shapes.
 
 import type { Bundle, FhirResource } from "fhir/r4";
+import type { Fetch } from "../faults.ts";
 
 // The EHR didn't give a usable answer: unreachable, or an error status. Routes turn it into ehr_unavailable.
 // Messages name the resource type only. Search parameters carry names and dates of birth.
@@ -37,7 +38,8 @@ export type TransactionResult =
 // fetch() failed before any of the request reached the EHR.
 const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"]);
 
-export function createFhirClient(options: { baseUrl: string; timeoutMs: number }): FhirClient {
+export function createFhirClient(options: { baseUrl: string; timeoutMs: number; fetch?: Fetch }): FhirClient {
+  const fetch = options.fetch ?? globalThis.fetch;
   // Every request, body included, must finish within the timeout. A slow EHR then fails or turns a
   // write unknown instead of holding the Caller on the line.
   const send = (method: string, url: string, body?: unknown) =>

@@ -3,6 +3,7 @@ import { bookingWindow, isInBookingWindow } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
 import { offeredSlot } from "./find-slots.ts";
 import { loadProviders, type Provider, type Providers } from "./providers.ts";
+import { isHeldFor } from "./slot-holds.ts";
 
 export const VISIT_TYPES = {
   annual_physical: "Annual physical",
@@ -77,18 +78,20 @@ export function appointmentDetails(appointment: Appointment, slot: Slot, provide
 
 export type SlotRejection = "slot_taken" | "slot_not_found" | "outside_booking_window";
 
-// The Slot a write is about to take and its Provider, or the reason it can't be taken.
+// The Slot a write is about to take and its Provider, or the reason it can't be taken. A busy Slot
+// is still the write's to take when this same write took it before and didn't finish.
 export async function slotToTake(
   fhir: FhirClient,
   slotId: string,
   providers: Providers,
   now: Date,
+  idempotencyKey: string,
 ): Promise<{ slot: Slot; provider: Provider } | { rejection: SlotRejection }> {
   const slot = await fhir.read<Slot>("Slot", slotId);
   const provider = slot && providers.bySchedule.get(scheduleIdOf(slot));
   if (!slot || !provider) return { rejection: "slot_not_found" };
   if (!isInBookingWindow(new Date(slot.start), bookingWindow(now))) return { rejection: "outside_booking_window" };
-  if (slot.status !== "free") return { rejection: "slot_taken" };
+  if (slot.status !== "free" && !isHeldFor(slot, idempotencyKey)) return { rejection: "slot_taken" };
   return { slot, provider };
 }
 

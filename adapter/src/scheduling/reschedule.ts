@@ -10,6 +10,7 @@ import {
   type SlotRejection,
 } from "./appointments.ts";
 import { loadProviders } from "./providers.ts";
+import { freed, taken } from "./slot-holds.ts";
 
 export type RescheduleRequest = {
   patientId: string;
@@ -44,7 +45,7 @@ export function reschedule(fhir: FhirClient, request: RescheduleRequest, now: Da
     }
     if (appointment.status === "cancelled") return { outcome: "rejected", reason: "appointment_cancelled" };
     if (new Date(appointment.start!) < now) return { outcome: "rejected", reason: "appointment_in_past" };
-    const taking = await slotToTake(fhir, request.slotId, providers, now);
+    const taking = await slotToTake(fhir, request.slotId, providers, now, request.idempotencyKey);
     if ("rejection" in taking) return { outcome: "rejected", reason: taking.rejection };
     const { slot: newSlot, provider } = taking;
 
@@ -58,21 +59,23 @@ export function reschedule(fhir: FhirClient, request: RescheduleRequest, now: Da
         { actor: { reference: `Practitioner/${provider.practitionerId}` }, status: "accepted" },
       ],
     };
+    // Taking the new Slot comes first, so a write that lands only in part never leaves the
+    // Appointment in a Slot someone else could still book.
     const transaction: Bundle<Slot | Appointment> = {
       resourceType: "Bundle",
       type: "transaction",
       entry: [
         {
+          resource: taken(newSlot, request.idempotencyKey),
+          request: { method: "PUT", url: `Slot/${newSlot.id}`, ifMatch: `W/"${newSlot.meta?.versionId}"` },
+        },
+        {
           resource: moved,
           request: { method: "PUT", url: `Appointment/${appointment.id}`, ifMatch: `W/"${appointment.meta?.versionId}"` },
         },
         {
-          resource: { ...oldSlot, status: "free" },
+          resource: freed(oldSlot),
           request: { method: "PUT", url: `Slot/${oldSlot.id}`, ifMatch: `W/"${oldSlot.meta?.versionId}"` },
-        },
-        {
-          resource: { ...newSlot, status: "busy" },
-          request: { method: "PUT", url: `Slot/${newSlot.id}`, ifMatch: `W/"${newSlot.meta?.versionId}"` },
         },
       ],
     };
