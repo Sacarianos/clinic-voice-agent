@@ -7,6 +7,7 @@ tool on the LLM directly: a handler registered that way runs whatever the curren
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
+from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.escalation import HandoffReason, escalation_tools, handoff
 from clinic_agent.pipeline import Call
@@ -19,7 +20,9 @@ You are on a live phone call. Everything you write is spoken aloud by a voice, s
 - Speak in short, natural sentences, one or two at a time, then let the caller talk.
 - Never use lists, markdown, emoji or symbols that sound wrong when read aloud.
 - Be warm, calm and plain-spoken.
-Never give medical advice. If the caller describes an emergency, tell them to hang up and dial 911.
+Never give medical advice. If the caller mentions an emergency at any point, call emergency_redirect at once.
+If they ask for a person, call for someone else, are not a patient yet, or ask a clinical question, call handoff.
+For questions about the clinic itself, call get_clinic_info and answer from what it returns.
 """
 
 GREETING = f"Thank you for calling {CLINIC_NAME}. How can I help you today?"
@@ -46,11 +49,22 @@ Ask for their first and last name and their date of birth, if they haven't given
 Once you have all three, call verify_patient right away, without reading them back.
 Pass the date of birth as YYYY-MM-DD.
 Never say whether a person is a patient here, and never use the caller's phone number as proof.
+
+Three things come before verification. When the caller's words fit one, act on it at once, without asking
+what they need or for their details first:
+- An emergency: call emergency_redirect at once.
+- A request to speak to a person ("can I talk to someone", "let me speak to a human"), a caller phoning
+  for someone else, a caller who isn't a patient yet, or a clinical question: call handoff right away.
+  Don't try to help, and don't ask for their name first. Staff will call them back.
+- A question about the clinic's hours, address, parking or providers: call get_clinic_info and answer
+  only from what it returns. Never answer from memory. Then go back to asking for what you still need.
 """
 
 INTENT_TASK = """\
 The caller is now a Verified Patient. Help them with what they called about: booking,
 rescheduling or cancelling an appointment, or a question about the clinic.
+For a question about the clinic, call get_clinic_info and answer only from what it returns.
+For a clinical question or a request for a person, call handoff. For an emergency, call emergency_redirect.
 """
 
 
@@ -63,7 +77,7 @@ async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str) -> 
         llm=call.llm,
         context_aggregator=call.aggregators,
         worker=call.worker,
-        global_functions=escalation_tools(ehr),
+        global_functions=[*escalation_tools(ehr), clinic_info_tool()],
     )
     flow.state["caller_phone"] = caller_phone
     await flow.initialize(_verify_identity_node(GREETING, ehr))

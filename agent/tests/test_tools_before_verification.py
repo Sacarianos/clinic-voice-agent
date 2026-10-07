@@ -5,7 +5,7 @@ from fakes import CallTool
 from scripts import spoken, verify
 
 
-async def test_before_verification_the_llm_is_offered_only_verification_and_the_escalation_paths(ehr, start_call):
+async def test_before_verification_the_llm_is_offered_only_verification_escalation_and_clinic_info(ehr, start_call):
     born = ehr.unused_birth_date()
     ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
 
@@ -19,10 +19,13 @@ async def test_before_verification_the_llm_is_offered_only_verification_and_the_
         await call.say("Book me with Dr. Whitfield on Thursday morning, please.")
         await call.say(f"Rosalind Okonkwo, {spoken(born)}.")
 
-        *before_verification, after_verification = call.offered_tools
+        # A real model may take more than one LLM run after verification, so split on verify_patient.
+        before_verification = [tools for tools in call.offered_tools if "verify_patient" in tools]
+        after_verification = [tools for tools in call.offered_tools if "verify_patient" not in tools]
         assert before_verification
-        assert all(set(tools) == {"verify_patient", "handoff", "emergency_redirect"} for tools in before_verification)
-        assert "verify_patient" not in after_verification
+        assert after_verification
+        before_verification_tools = {"verify_patient", "handoff", "emergency_redirect", "get_clinic_info"}
+        assert all(set(tools) == before_verification_tools for tools in before_verification), repr(call)
 
 
 @pytest.mark.scripted_only
