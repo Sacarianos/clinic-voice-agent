@@ -7,6 +7,7 @@ tool on the LLM directly: a handler registered that way runs whatever the curren
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
+from clinic_agent.booking import Exits, find_slots_tool
 from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.escalation import HandoffReason, escalation_tools, handoff
@@ -104,7 +105,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         )
         if verification.status == "verified":
             flow_manager.state["patient_id"] = verification.patient_id
-            return {"status": "verified"}, _intent_node()
+            return {"status": "verified"}, await _intent_node(ehr)
         if verification.status == "not_verified":
             failed = flow_manager.state.get("failed_verifications", 0) + 1
             flow_manager.state["failed_verifications"] = failed
@@ -130,9 +131,32 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
     )
 
 
-def _intent_node() -> NodeConfig:
+async def _intent_node(ehr: EhrAdapter) -> NodeConfig:
+    providers = await ehr.providers()
+
+    def back_to_intent(line: str) -> NodeConfig:
+        return {
+            "name": "intent",
+            "pre_actions": [{"type": "tts_say", "text": line}],
+            "task_messages": [{"role": "developer", "content": INTENT_TASK}],
+            "functions": functions,
+            "respond_immediately": False,
+        }
+
+    functions = [find_slots_tool(ehr, providers, Exits(booked=back_to_intent, handoff=_handoff_node))]
     return {
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],
+        "functions": functions,
+    }
+
+
+# TODO(#10): Booking's Handoff still only says its message. File the Callback Request with escalation.handoff.
+def _handoff_node(message: str) -> NodeConfig:
+    return {
+        "name": "handoff",
+        "task_messages": [],
         "functions": [],
+        "pre_actions": [{"type": "end_conversation", "text": message}],
+        "respond_immediately": False,
     }
