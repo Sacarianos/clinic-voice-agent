@@ -47,12 +47,27 @@ class TwilioAccount:
 def create_app(
     make_services: Callable[[], VoiceServices],
     *,
-    twilio: TwilioAccount,
+    twilio: TwilioAccount | None = None,
     hang_up_through_twilio: bool = True,
     tracing: bool = False,
 ) -> FastAPI:
+    """Phone calls come in only when there is a Twilio account to check their webhooks and hang them up."""
     app = FastAPI()
+    # Tests wait for this to drop back to 0 after hanging up, so they don't tear a call down mid-cleanup.
+    app.state.calls_in_progress = 0
+    if twilio:
+        _add_phone_routes(app, make_services, twilio, hang_up_through_twilio=hang_up_through_twilio, tracing=tracing)
+    return app
 
+
+def _add_phone_routes(
+    app: FastAPI,
+    make_services: Callable[[], VoiceServices],
+    twilio: TwilioAccount,
+    *,
+    hang_up_through_twilio: bool,
+    tracing: bool,
+) -> None:
     @app.post("/voice")
     async def voice(request: Request) -> Response:
         form = await request.form()
@@ -73,9 +88,6 @@ def create_app(
             f"<Response><Connect><Stream url={quoteattr(stream_url)}>{parameter}</Stream></Connect></Response>"
         )
         return Response(content=twiml, media_type="application/xml")
-
-    # Tests wait for this to drop back to 0 after hanging up, so they don't tear a call down mid-cleanup.
-    app.state.calls_in_progress = 0
 
     @app.websocket("/ws")
     async def media_stream(websocket: WebSocket) -> None:
@@ -142,7 +154,6 @@ def create_app(
         await runner.add_workers(call.worker)
         await runner.run()
 
-    return app
 
 
 def _latency_log() -> UserBotLatencyObserver:
@@ -173,13 +184,19 @@ def _signed_by_twilio(auth_token: str, url: str, form: Iterable[tuple[str, str]]
 
 
 def app_from_env(env: Mapping[str, str]) -> FastAPI:
-    """Raises ConfigError when a key the server needs is missing."""
+    """Raises ConfigError when a key the server needs is missing. Phone routes are on only with Twilio credentials."""
     make_services = phone_services(env)
-    twilio = TwilioAccount(
+    return create_app(make_services, twilio=_twilio_account(env), tracing=configure_tracing(env))
+
+
+def _twilio_account(env: Mapping[str, str]) -> TwilioAccount | None:
+    """None without Twilio credentials. Half of them is a mistake worth stopping for."""
+    if not env.get("TWILIO_ACCOUNT_SID") and not env.get("TWILIO_AUTH_TOKEN"):
+        return None
+    return TwilioAccount(
         account_sid=require(env, "TWILIO_ACCOUNT_SID", "Hanging up calls through Twilio"),
         auth_token=require(env, "TWILIO_AUTH_TOKEN", "Checking that webhooks come from Twilio"),
     )
-    return create_app(make_services, twilio=twilio, tracing=configure_tracing(env))
 
 
 def main() -> None:

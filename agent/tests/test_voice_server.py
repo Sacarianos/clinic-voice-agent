@@ -6,6 +6,7 @@ from ehr import clinic_time
 from fakes import CallTool, RecordingTTS, RunLLMOnceGreeted, ScriptedCaller, ScriptedLLM, SilentSTT, TalkOver
 from scripts import answer_read_back, handoff, spoken, verify
 from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
 from clinic_agent.config import ConfigError
@@ -98,12 +99,24 @@ def test_webhook_refuses_a_request_twilio_did_not_sign(form, headers):
 
 
 @pytest.mark.parametrize("missing", ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"])
-def test_server_refuses_to_start_without_twilio_credentials(missing):
+def test_server_refuses_to_start_with_only_half_of_the_twilio_credentials(missing):
     env = {**PHONE_KEYS, **TWILIO_KEYS}
     del env[missing]
 
     with pytest.raises(ConfigError, match=missing):
         app_from_env(env)
+
+
+def test_server_starts_without_twilio_credentials_and_takes_no_phone_calls():
+    client = TestClient(app_from_env(PHONE_KEYS))
+
+    webhook = client.post(
+        "/voice", data=INCOMING_CALL, headers={"host": NGROK_HOST, "x-twilio-signature": INCOMING_CALL_SIGNATURE}
+    )
+
+    assert webhook.status_code == 404
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect("/ws"):
+        pass
 
 
 def test_server_started_from_the_environment_checks_twilio_signatures():
