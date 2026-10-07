@@ -3,7 +3,7 @@
 import json
 import sys
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,6 +11,7 @@ import httpx
 from pipecat.services.llm_service import LLMService
 
 from clinic_agent.llm import LLM_CONFIGS
+from clinic_agent.phi import DATE_OF_BIRTH, NAME, PHI, PHONE
 from clinic_evals.caller import Caller
 from clinic_evals.graders import Grade, grade
 from clinic_evals.langfuse import Langfuse, LangfuseError
@@ -54,13 +55,30 @@ async def run_evals(
             record = await run_scenario(
                 scenario, *ehr_urls, agent=agent, caller=caller, reply_timeout_secs=reply_timeout_secs
             )
-            result = RunResult(batch_id, scenario.name, repeat, record, grade(record), started, datetime.now(UTC))
+            result = RunResult(batch_id, scenario.name, repeat, record, _masked(grade(record), record), started, datetime.now(UTC))
             results.append(result)
             print(_run_line(result), flush=True)
             _save(results, config, noise_rate, results_dir / f"{batch_id}.json")
             if langfuse:
                 _push(langfuse, result, config)
     return results
+
+
+def _masked(grades: list[Grade], record: RunRecord) -> list[Grade]:
+    """Grade reasons quote what the agent said, so they go through the agent's PHI mask before anything stores, prints or pushes them.
+
+    The mask already learns what the Caller says on the call. It is also taught what the run seeded, and the
+    surnames the noise injector garbled, so a name the agent repeats is masked even when the Caller never said it.
+    """
+    patient = record.scenario.patient
+    for name in (patient.given, patient.family):
+        PHI.learn(name, NAME)
+    PHI.learn(record.seeded.birth_date, DATE_OF_BIRTH)
+    PHI.learn(record.seeded.caller_phone, PHONE)
+    for applied in record.noise:
+        if applied.confusion.category == "surname":
+            PHI.learn(applied.confusion.heard, NAME)
+    return [replace(g, reason=PHI.mask(g.reason) if g.reason else None) for g in grades]
 
 
 def _push(langfuse: Langfuse, result: RunResult, config: str) -> None:

@@ -5,6 +5,7 @@ A local stand-in plays Langfuse: it records what would have been sent and answer
 
 import base64
 import json
+from datetime import date
 
 import httpx
 
@@ -13,6 +14,8 @@ from clinic_evals.caller import ScriptedCaller
 from clinic_evals.evals import run_evals
 from clinic_evals.graders import GRADERS
 from clinic_evals.langfuse import Langfuse
+from clinic_evals.noise import Confusion, NoiseInjector, NoisyCaller
+from clinic_evals.record import Seeded
 from clinic_evals.scenario import SCENARIOS_DIR, load_scenario
 
 
@@ -160,3 +163,66 @@ async def test_langfuse_refusing_a_run_does_not_stop_the_batch_or_lose_its_resul
     assert "Could not push asks_for_a_person run 2 to Langfuse" in capsys.readouterr().err
     [saved] = tmp_path.glob("*.json")
     assert len(json.loads(saved.read_text())["runs"]) == 2
+
+
+async def test_a_grade_reason_never_carries_the_patients_name_date_of_birth_or_phone_number(ehr_urls, tmp_path, capsys):
+    scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
+    langfuse = LangfuseStandIn()
+    seen: list[Seeded] = []
+
+    def agent(seeded: Seeded) -> ScriptedLLM:
+        seen.append(seeded)
+        born = date.fromisoformat(seeded.birth_date)
+        return ScriptedLLM(
+            [
+                f"Of course, Marguerite Villanueva, born {born:%B} {born.day}, {born.year}, I'll transfer you to the "
+                f"number {seeded.caller_phone} on file, or {seeded.birth_date}, now.",
+                "Goodbye.",
+            ]
+        )
+
+    results = await run_evals(
+        [scenario],
+        config="scripted",
+        repeats=1,
+        ehr_urls=ehr_urls,
+        agent=agent,
+        caller=lambda scenario, seeded: ScriptedCaller(["Can I talk to a real person, please?"]),
+        langfuse=langfuse.client(),
+        results_dir=tmp_path,
+    )
+
+    [seeded] = seen
+    born = date.fromisoformat(seeded.birth_date)
+    private = ["Marguerite", "Villanueva", seeded.caller_phone, seeded.birth_date, f"{born:%B} {born.day}, {born.year}"]
+    [transfer] = [score for score in langfuse.scores if score["name"] == "say_do_match"]
+    assert transfer["value"] == 0
+    assert "promised a transfer" in transfer["comment"]
+    pushed = json.dumps(langfuse.scores) + json.dumps(langfuse.spans)
+    saved_reasons = [g.reason for result in results for g in result.grades]
+    printed = capsys.readouterr()
+    for secret in private:
+        assert secret not in pushed, secret
+        assert not any(secret in (reason or "") for reason in saved_reasons), secret
+        assert secret not in printed.out + printed.err, secret
+
+
+async def test_a_surname_the_noise_injector_garbled_is_masked_in_reasons_too(ehr_urls, tmp_path):
+    scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
+    langfuse = LangfuseStandIn()
+    garble = NoiseInjector([Confusion("surname", "Villanueva", "Vianuevo", "hand-written")], rate=1)
+
+    await run_evals(
+        [scenario],
+        config="scripted",
+        repeats=1,
+        ehr_urls=ehr_urls,
+        agent=lambda seeded: ScriptedLLM(["Thanks Marguerite Vianuevo, I'll transfer you now.", "Goodbye."]),
+        caller=lambda scenario, seeded: NoisyCaller(ScriptedCaller(["Marguerite Villanueva, a person please."]), garble),
+        langfuse=langfuse.client(),
+        results_dir=tmp_path,
+    )
+
+    [transfer] = [score for score in langfuse.scores if score["name"] == "say_do_match"]
+    assert "Vianuevo" not in transfer["comment"]
+    assert "Villanueva" not in transfer["comment"]
