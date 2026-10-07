@@ -2,7 +2,8 @@
 // tested. A fault applies to one adapter request when it carries the x-inject-fault header, or to
 // every request when INJECT_FAULT is set. It acts between the adapter and the EHR, so the adapter's
 // own code meets it the way it would meet a real fault:
-// - timeout: the EHR applies each write but answers too late. Writes come back unknown.
+// - timeout: the EHR applies each write but answers only after the adapter gave up. Writes come back
+//   unknown, and are in the EHR by then.
 // - server_error: the EHR answers every request with a 500 and applies nothing. Writes come back
 //   failed, and reads ehr_unavailable.
 // - slot_taken: someone else takes the Slot a write is about to take, just before it commits. Book
@@ -63,30 +64,30 @@ function serverError(): Response {
   return new Response(JSON.stringify(outcome), { status: 500, headers: { "content-type": "application/fhir+json" } });
 }
 
+// The write is applied in full, however long HAPI takes, before the adapter gives up waiting.
 async function answerTooLate(url: string, init: RequestInit): Promise<Response> {
-  const response = await fetch(url, init);
+  const response = await fetch(url, { ...init, signal: null });
   await response.body?.cancel();
-  const signal = init.signal!;
-  return new Promise((_, reject) => {
-    if (signal.aborted) reject(signal.reason);
-    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-  });
+  await givenUp(init.signal!);
+  throw init.signal!.reason;
 }
 
 async function applyAfterGivingUp(url: string, init: RequestInit): Promise<Response> {
-  const signal = init.signal!;
-  await new Promise((resolve) => {
-    if (signal.aborted) resolve(undefined);
-    signal.addEventListener("abort", resolve, { once: true });
-  });
+  await givenUp(init.signal!);
   setTimeout(() => {
     fetch(url, { ...init, signal: null }).then(
       (response) => response.body?.cancel(),
       () => {},
     );
   }, STALLED_WRITE_LANDS_AFTER_MS);
-  throw signal.reason;
+  throw init.signal!.reason;
 }
+
+const givenUp = (signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
 
 function transactionIn(init: RequestInit): Bundle | undefined {
   const body = JSON.parse(String(init.body)) as FhirResource;
