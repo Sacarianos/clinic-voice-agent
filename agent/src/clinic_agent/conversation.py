@@ -23,6 +23,20 @@ Never give medical advice. If the caller describes an emergency, tell them to ha
 
 GREETING = f"Thank you for calling {CLINIC_NAME}. How can I help you today?"
 
+# The same words whatever didn't match, so the line can't be used to learn who is a Patient here.
+VERIFICATION_FAILED = (
+    "I'm sorry, I couldn't verify those details. "
+    "Could you tell me your full name and date of birth one more time?"
+)
+
+# TODO(#8): file the Callback Request this message promises.
+HANDOFF_AFTER_FAILED_VERIFICATION = (
+    "I'm sorry, I wasn't able to verify your identity. "
+    "A member of our staff will call you back to help. Goodbye."
+)
+
+MAX_FAILED_VERIFICATIONS = 2
+
 VERIFY_IDENTITY_TASK = """\
 Before you can help with anything about appointments, the caller must prove who they are.
 Ask for their first and last name and their date of birth, if they haven't given them yet.
@@ -64,6 +78,12 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         if verification.status == "verified":
             flow_manager.state["patient_id"] = verification.patient_id
             return {"status": "verified"}, _intent_node()
+        if verification.status == "not_verified":
+            failed = flow_manager.state.get("failed_verifications", 0) + 1
+            flow_manager.state["failed_verifications"] = failed
+            if failed >= MAX_FAILED_VERIFICATIONS:
+                return {"status": "not_verified"}, _handoff_node(HANDOFF_AFTER_FAILED_VERIFICATION)
+            return {"status": "not_verified"}, _verify_identity_node(VERIFICATION_FAILED, ehr)
         return {"status": verification.status}, None
 
     return FlowsFunctionSchema(
@@ -87,4 +107,14 @@ def _intent_node() -> NodeConfig:
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],
         "functions": [],
+    }
+
+
+def _handoff_node(message: str) -> NodeConfig:
+    return {
+        "name": "handoff",
+        "task_messages": [],
+        "functions": [],
+        "pre_actions": [{"type": "end_conversation", "text": message}],
+        "respond_immediately": False,
     }
