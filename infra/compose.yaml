@@ -1,0 +1,34 @@
+name: clinic-voice-agent
+
+services:
+  # The HAPI image is distroless and runs as uid 65532, so a fresh named volume
+  # (owned by root) must be handed over before HAPI can open its H2 file.
+  hapi-volume-init:
+    image: busybox:1.37
+    command: ["chown", "65532:65532", "/data/h2"]
+    volumes:
+      - hapi-data:/data/h2
+
+  hapi:
+    image: hapiproject/hapi:v8.12.0-2
+    depends_on:
+      hapi-volume-init:
+        condition: service_completed_successfully
+    ports:
+      - "${HAPI_PORT:-8080}:8080"
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx1g"
+      SPRING_DATASOURCE_URL: "jdbc:h2:file:/data/h2/hapi;DB_CLOSE_ON_EXIT=FALSE"
+      SPRING_DATASOURCE_USERNAME: sa
+      SPRING_DATASOURCE_PASSWORD: sa
+      SPRING_DATASOURCE_DRIVERCLASSNAME: org.h2.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: ca.uhn.fhir.jpa.model.dialect.HapiFhirH2Dialect
+      HAPI_FHIR_FHIR_VERSION: R4
+      HAPI_FHIR_CLIENT_ID_STRATEGY: ANY
+      # HAPI reuses identical searches for 60 s by default. A Slot freed or taken a moment ago must show up at once.
+      HAPI_FHIR_REUSE_CACHED_SEARCH_RESULTS_MILLIS: "-1"
+    volumes:
+      - hapi-data:/data/h2
+
+volumes:
+  hapi-data:
