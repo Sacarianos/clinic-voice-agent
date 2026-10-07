@@ -1,0 +1,15 @@
+summary: A Patient gives the wrong date of birth first, then the right one, and still books.
+patient: {given: Callum, family: Brennan}
+provider: {given: Imogen, family: Faraday}
+slots:
+  morning: {weekday: 2, at: "10:00"}
+caller:
+  goal: Book a follow-up visit with Dr. Imogen Faraday on {morning_day}, no new problem, just a check-in.
+  twist: >-
+    When you are first asked for your date of birth, say you were born on {wrong_birth_date}. If the
+    receptionist says it couldn't verify you, apologise and give your real date of birth, the one in
+    "Who you are". Then carry on with the booking and say yes to the time offered.
+expect:
+  appointments:
+    - {slot: morning, visit_type: follow_up}
+  handoff: false

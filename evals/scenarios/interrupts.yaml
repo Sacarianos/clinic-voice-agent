@@ -1,0 +1,15 @@
+summary: A Patient cuts in with a Clinic Question while times are being offered, then books.
+patient: {given: Wendell, family: Abernathy}
+provider: {given: Imogen, family: Faraday}
+slots:
+  early: {weekday: 2, at: "09:00"}
+  late: {weekday: 2, at: "14:30"}
+caller:
+  goal: Book your annual physical with Dr. Imogen Faraday on {early_day}.
+  twist: >-
+    While the receptionist is listing times, cut in before they finish: "Sorry to interrupt, is there
+    parking at the clinic?" Once you have the answer, ask for the times again and take the later one.
+expect:
+  appointments:
+    - {slot: late, visit_type: annual_physical}
+  handoff: false

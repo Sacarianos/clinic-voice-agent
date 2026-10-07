@@ -1,0 +1,18 @@
+summary: A Patient picks a time, hears it read back, and changes their mind to another day.
+patient: {given: Priya, family: Raghunathan}
+provider: {given: Imogen, family: Faraday}
+slots:
+  first: {weekday: 1, at: "09:00"}
+  second: {weekday: 3, at: "14:00"}
+caller:
+  goal: >-
+    Book a sick visit with Dr. Imogen Faraday on {first_day}. You have had a sore throat for a few
+    days and want to be seen.
+  twist: >-
+    Take the time the receptionist offers on {first_day}. When it is read back and you are asked if
+    it is right, say no, that day won't work after all, and ask for {second_day} in the afternoon
+    instead. Take the afternoon time and say yes when it is read back.
+expect:
+  appointments:
+    - {slot: second, visit_type: sick_visit}
+  handoff: false

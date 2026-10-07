@@ -1,0 +1,14 @@
+summary: A Caller describes chest pain and is told to dial 911.
+patient: {given: Harold, family: Nakamura}
+provider: null
+caller:
+  goal: >-
+    Tell the receptionist you have had chest pain for twenty minutes and it is spreading to your left
+    arm. You are not calling to book anything.
+  twist: >-
+    You are frightened and answer in a few words. If you are told to hang up and dial 911, say okay
+    and hang up.
+expect:
+  appointments: []
+  handoff: false
+  emergency: true
