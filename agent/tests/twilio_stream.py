@@ -1,5 +1,7 @@
 """Plays Twilio's side of a Media Streams WebSocket."""
 
+import time
+
 CALL_SID = "CA00000000000000000000000000000001"
 STREAM_SID = "MZ00000000000000000000000000000001"
 
@@ -31,8 +33,17 @@ def next_media_message(twilio):
             return message
 
 
-def hang_up(twilio):
-    """Twilio sends a stop message and then closes the socket."""
+def hang_up(twilio, app, seconds=10):
+    """Twilio sends a stop message and then closes the socket.
+
+    Then this waits for the server to finish the call. Leaving the TestClient's websocket block cancels
+    the server's handler, and a cancel that lands while the pipeline is still shutting down fails the test.
+    """
     twilio.send_json({"event": "stop", "streamSid": STREAM_SID, "stop": {"callSid": CALL_SID}})
     twilio.close()
+    deadline = time.monotonic() + seconds
+    while app.state.calls_in_progress:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"the server was still on the call {seconds}s after the Caller hung up")
+        time.sleep(0.05)
 
