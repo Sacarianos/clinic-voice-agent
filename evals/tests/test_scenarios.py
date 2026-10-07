@@ -102,3 +102,38 @@ expect: {appointments: [], handoff: false}
 
     with pytest.raises(ScenarioError, match="curent_day"):
         load_scenario(path)
+
+
+def test_a_scenario_can_expect_an_emergency_redirect_and_the_wrong_birth_date_in_the_twist(tmp_path):
+    path = tmp_path / "chest_pain.yaml"
+    path.write_text(
+        """
+summary: Chest pain.
+patient: {given: Desmond, family: Achterberg}
+provider: null
+caller:
+  goal: Say you have chest pain.
+  twist: Give {wrong_birth_date} as your date of birth first.
+expect: {appointments: [], handoff: false, emergency: true}
+"""
+    )
+
+    scenario = load_scenario(path)
+
+    assert scenario.expect_emergency
+    assert not scenario.expect_handoff
+
+
+def test_a_scenario_that_does_not_mention_emergency_expects_none(tmp_path):
+    path = tmp_path / "calm.yaml"
+    path.write_text(
+        """
+summary: Calm.
+patient: {given: Desmond, family: Achterberg}
+provider: null
+caller: {goal: Talk., twist: None.}
+expect: {appointments: [], handoff: false}
+"""
+    )
+
+    assert not load_scenario(path).expect_emergency

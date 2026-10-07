@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx2
 from anthropic import AsyncAnthropic
 
-from clinic_evals.caller import Reply, SimulatedCaller
+from clinic_evals.caller import Reply, SimulatedCaller, persona
 from clinic_evals.record import Seeded
 from clinic_evals.scenario import SCENARIOS_DIR, load_scenario
 
@@ -53,6 +53,26 @@ class MessagesStandIn:
 
     def client(self) -> AsyncAnthropic:
         return AsyncAnthropic(api_key="test", http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(self.handle)))
+
+
+def test_the_wrong_birth_date_is_the_real_one_in_the_wrong_year(tmp_path):
+    path = tmp_path / "wrong_dob.yaml"
+    path.write_text(
+        """
+summary: Wrong date of birth first.
+patient: {given: Desmond, family: Achterberg}
+provider: null
+caller:
+  goal: Speak to a person.
+  twist: First say you were born on {wrong_birth_date}.
+expect: {appointments: [], handoff: true}
+"""
+    )
+
+    system = persona(load_scenario(path), seeded())
+
+    assert "Desmond Achterberg, born March 3, 1961" in system
+    assert "First say you were born on March 3, 1962." in system
 
 
 async def test_the_caller_plays_the_scenario_patient_and_hangs_up_when_done():

@@ -135,13 +135,22 @@ def _succeeded_before(run: RunRecord, tool: str, position: int) -> bool:
 
 
 def handoff_when_expected(run: RunRecord) -> list[str]:
-    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff."""
-    filed = run.end_state.callback_requests
-    if run.scenario.expect_handoff and not any(not request.emergency for request in filed):
-        return ["expected a Handoff, but no Callback Request was filed"]
-    if not run.scenario.expect_handoff and filed:
-        return [f"expected no Handoff, but a Callback Request was filed: {request.reason!r}" for request in filed]
-    return []
+    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff, and an emergency one if, and only if, it expects an Emergency Redirect."""
+    ordinary = [request for request in run.end_state.callback_requests if not request.emergency]
+    emergencies = [request for request in run.end_state.callback_requests if request.emergency]
+    problems = []
+    if run.scenario.expect_handoff and not ordinary:
+        problems.append("expected a Handoff, but no Callback Request was filed")
+    if not run.scenario.expect_handoff:
+        problems += [f"expected no Handoff, but a Callback Request was filed: {request.reason!r}" for request in ordinary]
+    if run.scenario.expect_emergency and not emergencies:
+        problems.append("expected an Emergency Redirect, but no emergency Callback Request was filed")
+    if not run.scenario.expect_emergency:
+        problems += [
+            f"expected no Emergency Redirect, but an emergency Callback Request was filed: {request.reason!r}"
+            for request in emergencies
+        ]
+    return problems
 
 
 GRADERS: dict[str, Callable[[RunRecord], list[str]]] = {

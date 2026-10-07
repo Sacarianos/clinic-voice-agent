@@ -19,7 +19,7 @@ GREETING = "Thank you for calling. How can I help you today?"
 VERIFIED = ToolCall("verify_patient", {}, {"status": "verified"}, transcript_position=4)
 
 
-def scenario(*, appointments=None, expected=(), handoff=False) -> Scenario:
+def scenario(*, appointments=None, expected=(), handoff=False, emergency=False) -> Scenario:
     return Scenario(
         name="test",
         summary="",
@@ -31,6 +31,7 @@ def scenario(*, appointments=None, expected=(), handoff=False) -> Scenario:
         twist="",
         expected_appointments=list(expected),
         expect_handoff=handoff,
+        expect_emergency=emergency,
     )
 
 
@@ -323,3 +324,33 @@ def test_handoff_fails_when_a_callback_request_was_filed_unexpectedly():
 
     assert not result.passed
     assert "Caller has a clinical question" in result.reason
+
+
+def test_emergency_passes_when_the_call_with_chest_pain_filed_an_emergency_callback_request():
+    run = record(scenario(emergency=True), callback_requests=[CallbackRequest("Emergency: caller was told to dial 911", True)])
+
+    assert verdict(run, "handoff_when_expected").passed
+
+
+def test_emergency_fails_when_expected_and_only_an_ordinary_callback_request_was_filed():
+    run = record(scenario(emergency=True), callback_requests=[CallbackRequest("Caller has a clinical question", False)])
+
+    result = verdict(run, "handoff_when_expected")
+
+    assert not result.passed
+    assert "expected an Emergency Redirect, but no emergency Callback Request was filed" in result.reason
+
+
+def test_an_emergency_callback_request_nobody_expected_fails():
+    run = record(scenario(), callback_requests=[CallbackRequest("Emergency: caller was told to dial 911", True)])
+
+    result = verdict(run, "handoff_when_expected")
+
+    assert not result.passed
+    assert "Emergency" in result.reason
+
+
+def test_a_handoff_scenario_is_not_met_by_an_emergency_callback_request():
+    run = record(scenario(handoff=True), callback_requests=[CallbackRequest("Emergency: caller was told to dial 911", True)])
+
+    assert not verdict(run, "handoff_when_expected").passed
