@@ -73,6 +73,7 @@ def test_a_keyed_name_is_masked_and_then_masked_wherever_it_appears():
 
 
 def test_fhir_shaped_data_is_masked_by_its_keys():
+    mask = PhiMask()
     patient = {
         "resourceType": "Patient",
         "id": "p-1",
@@ -81,13 +82,14 @@ def test_fhir_shaped_data_is_masked_by_its_keys():
         "telecom": [{"system": "phone", "value": "555 867 5309"}],
     }
 
-    assert PhiMask().mask_data(patient) == {
+    assert mask.mask_data(patient) == {
         "resourceType": "Patient",
         "id": "p-1",
         "name": [{"use": "official", "family": NAME, "given": [NAME]}],
         "birthDate": DATE_OF_BIRTH,
-        "telecom": [{"system": PHONE, "value": PHONE}],
+        "telecom": [{"system": "phone", "value": PHONE}],
     }
+    assert mask.mask("the official phone line") == "the official phone line"
 
 
 def test_what_the_caller_said_before_verification_is_masked_whole_even_when_escaped_as_json():

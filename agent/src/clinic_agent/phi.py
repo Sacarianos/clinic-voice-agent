@@ -58,8 +58,8 @@ PHI_KEYS = {
     "from_number": PHONE,
     "From": PHONE,
 }
-# A FHIR resource's phone numbers are the values of its telecom entries.
-_TELECOM = "telecom"
+# A FHIR resource's phone numbers are the `value`s inside its `telecom` entries. This marks being inside one.
+_IN_TELECOM = "telecom"
 
 MAX_LEARNED = 10_000
 
@@ -149,7 +149,7 @@ class PhiMask:
         if isinstance(data, list):
             return [self._mask_data(item, placeholder) for item in data]
         if isinstance(data, str):
-            return placeholder or self.mask(data)
+            return self.mask(data) if placeholder in (None, _IN_TELECOM) else placeholder
         return data
 
     def _learn_keyed_values(self, data: Any, placeholder: str | None = None) -> None:
@@ -159,7 +159,7 @@ class PhiMask:
         elif isinstance(data, list):
             for item in data:
                 self._learn_keyed_values(item, placeholder)
-        elif isinstance(data, str) and placeholder:
+        elif isinstance(data, str) and placeholder not in (None, _IN_TELECOM):
             self.learn(data, placeholder)
 
     def _mask_keyed_value(self, match: re.Match) -> str:
@@ -210,10 +210,13 @@ class PhiRedactionProcessor(FrameProcessor):
 
 
 def _placeholder_for(key: Any, inherited: str | None) -> str | None:
+    """What a value under `key` is masked as, given what the value holding it is masked as."""
+    if inherited == _IN_TELECOM:
+        return PHONE if key == "value" else _IN_TELECOM
     if inherited:
         return inherited
-    if key == _TELECOM:
-        return PHONE
+    if key == _IN_TELECOM:
+        return _IN_TELECOM
     return PHI_KEYS.get(key) if isinstance(key, str) else None
 
 
