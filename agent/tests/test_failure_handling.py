@@ -82,3 +82,61 @@ async def test_a_book_that_timed_out_but_landed_is_found_by_re_reading_and_not_s
         [appointment] = ehr.appointments_of(patient_id)
         assert appointment["slot"] == [{"reference": f"Slot/{slot_id}"}]
         assert "booked" in call.agent_lines[-1]
+
+
+async def test_a_half_applied_book_is_found_unfinished_by_re_reading_and_the_retry_finishes_it(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("half_write", into=BOOK)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        await call.say("Yes.")
+
+        assert faulty_adapter.requests[-3:] == ["POST /appointments", "GET /appointments", "POST /appointments"]
+        assert call.tool_results("book_appointment") == [{"outcome": "succeeded"}]
+        [appointment] = ehr.appointments_of(patient_id)
+        assert appointment["slot"] == [{"reference": f"Slot/{slot_id}"}]
+        assert ehr.slot_status(slot_id) == "busy"
+        assert "booked" in call.agent_lines[-1]
+
+
+async def test_a_book_half_applied_twice_hands_off_and_says_it_was_not_booked(ehr, start_call, faulty_adapter):
+    faulty_adapter.inject("half_write", into=BOOK, times=2)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        reply = await call.say("Yes.")
+
+        assert ehr.appointments_of(patient_id) == []
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "could not book" in filed.reason.lower()
+        assert "wasn't able to book" in reply
+        assert call.ended
+
+
+async def test_when_the_re_read_fails_too_the_retry_with_the_same_key_finds_the_book_that_landed(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("timeout", into=BOOK)
+    faulty_adapter.inject("server_error", into=LIST_APPOINTMENTS)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        await call.say("Yes.")
+
+        assert faulty_adapter.sent(BOOK) == 2
+        assert call.tool_results("book_appointment") == [{"outcome": "succeeded"}]
+        [appointment] = ehr.appointments_of(patient_id)
+        assert appointment["slot"] == [{"reference": f"Slot/{slot_id}"}]
+        assert "booked" in call.agent_lines[-1]
+
+
+async def test_a_book_that_can_never_be_confirmed_hands_off_without_saying_whether_it_was_booked(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("half_write", into=BOOK, times=2)
+    faulty_adapter.inject("server_error", into=LIST_APPOINTMENTS, times=2)
+    async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
+        reply = await call.say("Yes.")
+
+        assert call.tool_results("book_appointment") == [{"outcome": "unknown"}]
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert "could not confirm" in filed.reason.lower()
+        assert "couldn't confirm whether your appointment was booked" in reply
+        assert "call you back" in reply
+        assert call.ended
