@@ -142,7 +142,7 @@ Twilio signs each webhook with your auth token over the exact URL in that settin
 
 In Langfuse, each call is one trace session named by its Twilio CallSid. The `conversation` span holds one `turn` span per exchange, with STT, LLM and TTS spans under it. Their `metrics.ttfb` attributes give time to first byte, and `turn.user_bot_latency_seconds` gives voice-to-voice latency. The server log prints a breakdown of each response's latency too.
 
-Until the PHI masking work lands, traces and debug logs hold the raw transcript. Say only synthetic names and dates on test calls.
+Names, dates of birth and phone numbers are masked before anything is logged or exported to Langfuse. Everything the Caller says before Identity Verification is masked whole, so a trace shows `[UNVERIFIED CALLER]` there. Every attempt to write to the EHR is appended to an audit log, `audit-log.jsonl` in the server's working directory unless `AUDIT_LOG_PATH` names another file. [docs/phi-policy.md](docs/phi-policy.md) says what is stored where, what the masking covers and misses, and which vendors would need a BAA. Say only synthetic names and dates on test calls.
 
 To hear how a call handles a slow or broken EHR, start the stack with a fault for every request, such as `INJECT_FAULT=timeout docker compose -f infra/compose.yaml up -d --wait --build`. Every write then takes the FHIR timeout and comes back `unknown`.
 
