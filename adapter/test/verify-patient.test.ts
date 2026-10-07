@@ -61,6 +61,17 @@ describe("Verify patient", () => {
     }
   });
 
+  test.each([
+    ["a date of birth that isn't a date", { givenName: "Ada", familyName: "Byron", dateOfBirth: "1815-13-10" }],
+    ["a blank surname", { givenName: "Ada", familyName: " ", dateOfBirth: "1815-12-10" }],
+    ["a missing given name", { familyName: "Byron", dateOfBirth: "1815-12-10" }],
+  ])("%s is an invalid request that doesn't echo what was sent", async (_, body) => {
+    const response = await verify(body);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "invalid_request" });
+  });
+
   describe("two Patients who share a date of birth and sound alike", () => {
     let dateOfBirth: string;
     let smithId: string;

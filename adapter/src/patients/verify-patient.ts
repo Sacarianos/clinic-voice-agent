@@ -17,7 +17,7 @@ export type VerifyPatientResult =
 type Candidate = { patientId: string; exactFamily: boolean; exactGiven: boolean };
 
 export async function verifyPatient(fhir: FhirClient, request: VerifyPatientRequest): Promise<VerifyPatientResult> {
-  const patients = await fhir.search<Patient>("Patient", { birthdate: request.dateOfBirth });
+  const patients = await fhir.search<Patient>("Patient", { birthdate: request.dateOfBirth, _count: "100" });
   let candidates = patients.flatMap((patient) => {
     const candidate = bestNameMatch(patient, request);
     return candidate ? [candidate] : [];
