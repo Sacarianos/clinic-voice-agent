@@ -48,7 +48,6 @@ class Exits:
     """Where booking, rescheduling and cancelling hand the call back to the rest of the conversation."""
 
     back_to_intent: Callable[[str], NodeConfig]  # back to Intent, after saying this line
-    handoff: Callable[[str], NodeConfig]  # Handoff with this message
 
 
 @dataclass(frozen=True)

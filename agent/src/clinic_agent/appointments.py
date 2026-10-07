@@ -26,12 +26,6 @@ CHANGE_REJECTED = {
     "appointment_not_found": f"I'm sorry, I can't find that appointment any more. {ANYTHING_ELSE}",
 }
 
-# TODO(#10): retry a failed change once with the same key, reconcile an unknown one, and file the Callback Request.
-CHANGE_FAILED = (
-    "I'm sorry, I wasn't able to finish changing that appointment. "
-    "A member of our staff will call you back to help. Goodbye."
-)
-
 CHOOSE_APPOINTMENT_TASK = """\
 Tell the caller the upcoming appointments list_appointments just returned, each with the Provider,
 the day and the time. If there is more than one and the caller hasn't said which they mean, ask
@@ -212,12 +206,19 @@ class _Rescheduling(Booking):
         idempotency_key = str(uuid.uuid4())
 
         async def reschedule_appointment(args: dict, flow_manager: FlowManager):
-            written = await self.ehr.reschedule(
-                patient_id=flow_manager.state["patient_id"],
-                appointment_id=self.appointment.appointment_id,
-                slot_id=slot.slot_id,
-                idempotency_key=idempotency_key,
-            )
+            patient_id = flow_manager.state["patient_id"]
+            appointment_id = self.appointment.appointment_id
+
+            async def reschedule() -> WriteOutcome:
+                return await self.ehr.reschedule(
+                    patient_id=patient_id, appointment_id=appointment_id, slot_id=slot.slot_id, idempotency_key=idempotency_key
+                )
+
+            async def is_moved() -> bool:
+                listed = await self.ehr.appointments(patient_id)
+                return any(a.appointment_id == appointment_id and a.slot_id == slot.slot_id for a in listed)
+
+            written = await write_until_settled(reschedule, is_moved)
             if written.outcome == "succeeded":
                 moved = (
                     f"Done. Your {VISIT_TYPES[self.appointment.visit_type]} is now on {spoken_time(slot.start)} "
@@ -229,7 +230,9 @@ class _Rescheduling(Booking):
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
-            return {"outcome": written.outcome}, self.exits.handoff(CHANGE_FAILED)
+            details = f"{_details(self.appointment)}, to {spoken_time(slot.start)} with {slot.provider_name}"
+            reason = unsettled(written, verb="move", done="moved", details=details)
+            return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(
             name="reschedule_appointment",

@@ -144,21 +144,10 @@ async def _intent_node(ehr: EhrAdapter) -> NodeConfig:
             "respond_immediately": False,
         }
 
-    exits = Exits(back_to_intent=back_to_intent, handoff=_handoff_node)
+    exits = Exits(back_to_intent=back_to_intent)
     functions = [find_slots_tool(ehr, providers, exits), list_appointments_tool(ehr, providers, exits)]
     return {
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],
         "functions": functions,
-    }
-
-
-# TODO(#10): Booking's Handoff still only says its message. File the Callback Request with escalation.handoff.
-def _handoff_node(message: str) -> NodeConfig:
-    return {
-        "name": "handoff",
-        "task_messages": [],
-        "functions": [],
-        "pre_actions": [{"type": "end_conversation", "text": message}],
-        "respond_immediately": False,
     }
