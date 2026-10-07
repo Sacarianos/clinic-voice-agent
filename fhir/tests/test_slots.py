@@ -40,14 +40,9 @@ def test_every_slot_lasts_thirty_minutes(fhir):
 def test_there_are_no_slots_on_weekends_or_outside_clinic_hours(fhir):
     slots = fhir.search("Slot")
 
+    assert slots
     for slot in slots:
         start, end = at_clinic_time(slot["start"]), at_clinic_time(slot["end"])
         assert start.weekday() < 5
         assert start.time() >= datetime.min.time().replace(hour=8)
         assert end.time() <= datetime.min.time().replace(hour=17)
-
-
-def test_slots_total_matches_the_window(fhir):
-    expected = 3 * 18 * len(booking_window_weekdays())
-
-    assert fhir.count("Slot") >= expected

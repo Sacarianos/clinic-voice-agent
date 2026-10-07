@@ -1,10 +1,12 @@
 import os
+from datetime import date
 from pathlib import Path
 
-from clinic_seed.clinic import PROVIDER_SYSTEM
+from clinic_seed.clinic import PROVIDER_SYSTEM, SCHEDULE_SYSTEM
 from clinic_seed.fhir_client import FhirClient
 from clinic_seed.patients import identifier_token, load_patients
 from clinic_seed.providers import practitioner_resources, schedule_resources
+from clinic_seed.slots import slot_resources, today_at_clinic
 
 
 def main() -> None:
@@ -21,6 +23,12 @@ def main() -> None:
     practitioner_ids = fhir.ids_by_identifier("Practitioner", PROVIDER_SYSTEM)
     fhir.create_if_absent(schedule_resources(practitioner_ids))
     print(f"Seeded {len(practitioner_ids)} providers with a schedule each.")
+
+    schedule_ids = fhir.ids_by_identifier("Schedule", SCHEDULE_SYSTEM)
+    first_day = date.fromisoformat(os.environ["SEED_START_DATE"]) if "SEED_START_DATE" in os.environ else today_at_clinic()
+    slots = slot_resources(schedule_ids, first_day)
+    fhir.create_if_absent(slots)
+    print(f"Seeded {len(slots)} slots starting {first_day}.")
 
 
 if __name__ == "__main__":
