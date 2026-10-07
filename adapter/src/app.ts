@@ -9,7 +9,7 @@ import { appointmentRoutes, providerRoutes, slotRoutes } from "./scheduling/rout
 // Error bodies are always { error: <code> }. Domain results, including a failed verification and every
 // write outcome (see write-outcome.ts), are 200s.
 export function createApp(config: Config) {
-  const fhir = createFhirClient({ baseUrl: config.fhirBaseUrl });
+  const fhir = createFhirClient({ baseUrl: config.fhirBaseUrl, timeoutMs: config.fhirTimeoutMs });
 
   return new Hono()
     .get("/healthz", (c) => c.json({ ok: true }))
