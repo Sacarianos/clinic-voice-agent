@@ -97,8 +97,9 @@ def _handoff_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         name="handoff",
         description=(
             "End the call and have clinic staff call the caller back. Use it when the caller asks for a person (a human, staff, the front desk), "
-            "is calling for someone else, is not a patient yet, or asks a clinical or medical question "
-            "(symptoms, medication, test results, treatment). Do not answer those yourself."
+            "is calling for someone else, is not a patient yet, or asks for medical advice "
+            "(what a symptom means, medication, test results, treatment). Do not answer those yourself. "
+            "Not for a caller who feels unwell and wants an appointment: help them book a sick visit instead."
         ),
         properties={
             "reason": {
