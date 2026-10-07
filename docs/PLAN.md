@@ -159,4 +159,4 @@ With 10 scenarios only large gaps mean anything.
 
 ## Decisions
 
-Decisions that are costly to reverse live in [docs/adr/](adr/).
+Decisions that are costly to reverse live in [docs/adr/](adr/). Specs and tickets live in GitHub Issues; the checkboxes above are a summary.
