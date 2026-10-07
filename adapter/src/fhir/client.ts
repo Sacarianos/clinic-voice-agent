@@ -20,6 +20,8 @@ export type FhirClient = {
   read<T extends FhirResource>(resourceType: T["resourceType"], id: string): Promise<T | undefined>;
   // Runs every entry or none of them. Never throws for the EHR being unavailable: what happened is the result.
   transaction(bundle: Bundle<FhirResource>): Promise<TransactionResult>;
+  // Throws EhrUnavailableError unless the resource was stored.
+  create<T extends FhirResource>(resource: T): Promise<T & { id: string }>;
 };
 
 export type TransactionResult =
@@ -52,6 +54,21 @@ export function createFhirClient(options: { baseUrl: string }): FhirClient {
 
   const searchUrl = (resourceType: string, params: SearchParams) =>
     `${options.baseUrl}/${resourceType}?${new URLSearchParams(params)}`;
+
+  async function create<T extends FhirResource>(resource: T): Promise<T & { id: string }> {
+    let response: Response;
+    try {
+      response = await fetch(`${options.baseUrl}/${resource.resourceType}`, {
+        method: "POST",
+        headers: { accept: "application/fhir+json", "content-type": "application/fhir+json" },
+        body: JSON.stringify(resource),
+      });
+    } catch (error) {
+      throw new EhrUnavailableError(`POST ${resource.resourceType} failed: ${(error as Error).cause ?? error}`);
+    }
+    if (!response.ok) throw new EhrUnavailableError(`POST ${resource.resourceType} returned ${response.status}`);
+    return (await response.json()) as T & { id: string };
+  }
 
   return {
     async search(resourceType, params) {
@@ -97,5 +114,7 @@ export function createFhirClient(options: { baseUrl: string }): FhirClient {
         return { status: "unknown" };
       }
     },
+
+    create,
   };
 }

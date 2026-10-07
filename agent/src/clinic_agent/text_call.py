@@ -55,9 +55,10 @@ class ToolCall:
 
 
 class TextCall:
-    """Use as `async with TextCall(llm, ehr) as call:`. Entering waits for the agent's greeting."""
+    """Use as `async with TextCall(llm, ehr, caller_phone=...) as call:`. Entering waits for the agent's greeting."""
 
-    def __init__(self, llm: LLMService, ehr: EhrAdapter, *, reply_timeout_secs: float = 10):
+    def __init__(self, llm: LLMService, ehr: EhrAdapter, *, caller_phone: str, reply_timeout_secs: float = 10):
+        self.caller_phone = caller_phone
         self.transcript: list[tuple[str, str]] = []  # ("caller" | "agent", line), in order
         self.tool_calls: list[ToolCall] = []
         self.offered_tools: list[list[str]] = []  # tool names the LLM was offered, one list per LLM run
@@ -111,7 +112,7 @@ class TextCall:
         await runner.add_workers(self._call.worker)
         self._run = asyncio.create_task(runner.run())
         await self._until(started.wait())
-        self._flow = await self._until(start_conversation(self._call, self._ehr))
+        self._flow = await self._until(start_conversation(self._call, self._ehr, self.caller_phone))
         await self._agent_turn()
         return self
 
