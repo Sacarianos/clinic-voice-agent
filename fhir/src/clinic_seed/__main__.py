@@ -25,7 +25,8 @@ def main() -> None:
     print(f"Seeded {len(practitioner_ids)} providers with a schedule each.")
 
     schedule_ids = fhir.ids_by_identifier("Schedule", SCHEDULE_SYSTEM)
-    first_day = date.fromisoformat(os.environ["SEED_START_DATE"]) if "SEED_START_DATE" in os.environ else today_at_clinic()
+    start_date = os.environ.get("SEED_START_DATE")
+    first_day = date.fromisoformat(start_date) if start_date else today_at_clinic()
     slots = slot_resources(schedule_ids, first_day)
     fhir.create_if_absent(slots)
     print(f"Seeded {len(slots)} slots starting {first_day}.")

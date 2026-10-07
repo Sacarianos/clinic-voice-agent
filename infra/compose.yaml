@@ -17,7 +17,7 @@ services:
     ports:
       - "${HAPI_PORT:-8080}:8080"
     environment:
-      JAVA_TOOL_OPTIONS: "-Xmx1g"
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m -XX:+UseSerialGC"
       SPRING_DATASOURCE_URL: "jdbc:h2:file:/data/h2/hapi;DB_CLOSE_ON_EXIT=FALSE"
       SPRING_DATASOURCE_USERNAME: sa
       SPRING_DATASOURCE_PASSWORD: sa
@@ -29,6 +29,46 @@ services:
       HAPI_FHIR_REUSE_CACHED_SEARCH_RESULTS_MILLIS: "-1"
     volumes:
       - hapi-data:/data/h2
+    # The image has no shell or curl. HealthCheck is a class it ships in /app.
+    healthcheck:
+      test: ["CMD", "java", "-cp", "/app", "HealthCheck"]
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 12
+
+  # Generates the same 60 adult Patients every time. Skips itself when fhir/output already holds them.
+  synthea:
+    build: ../fhir/synthea
+    volumes:
+      - ../fhir/output:/output
+    restart: "no"
+
+  # Loads Patients, Providers, Schedules and Slots into HAPI. Safe to run again: it only creates what is missing.
+  # It stays up after seeding and reports healthy once the data is in, so `up --wait` returns only when the
+  # clinic is ready. `docker compose restart seed` seeds again, for example to add a new day of Slots.
+  seed:
+    build:
+      context: ../fhir
+      dockerfile: seed.Dockerfile
+    depends_on:
+      hapi:
+        condition: service_healthy
+      synthea:
+        condition: service_completed_successfully
+    environment:
+      FHIR_BASE_URL: http://hapi:8080/fhir
+      SYNTHEA_OUTPUT_DIR: /output
+      SEED_START_DATE: "${SEED_START_DATE:-}"
+    volumes:
+      - ../fhir/output:/output:ro
+    command: ["sh", "-c", "rm -f /tmp/seeded && python -m clinic_seed && touch /tmp/seeded && exec sleep infinity"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/seeded"]
+      interval: 2s
+      timeout: 2s
+      retries: 300
+    restart: "no"
 
 volumes:
   hapi-data:
