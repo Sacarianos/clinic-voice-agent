@@ -3,7 +3,7 @@
 Each scenario is a YAML file in `evals/scenarios/`, named after the scenario. Times are relative, so a
 scenario works on any day: `weekday: 1` is the first clinic weekday after today. The Caller's goal and
 twist may name a Slot by its label: `{late}` reads as "Thursday, October 8 at 11 AM" and `{late_day}`
-as "Thursday, October 8".
+as "Thursday, October 8". `{wrong_birth_date}` reads as the Patient's real date of birth in the wrong year.
 """
 
 from dataclasses import dataclass
@@ -15,6 +15,8 @@ import yaml
 
 from clinic_agent.booking import VISIT_TYPES
 
+# A name the goal and twist can use besides Slot labels: the Patient's date of birth with the wrong year.
+WRONG_BIRTH_DATE = "wrong_birth_date"
 SCENARIOS_DIR = Path(__file__).resolve().parents[2] / "scenarios"
 
 
@@ -63,6 +65,7 @@ class Scenario:
     twist: str
     expected_appointments: list[ExpectedAppointment]  # all the Patient's booked Appointments, nothing more
     expect_handoff: bool
+    expect_emergency: bool = False  # the call ends in an Emergency Redirect, with an emergency Callback Request
 
 
 def load_scenarios(directory: Path) -> list[Scenario]:
@@ -91,9 +94,11 @@ def _parse(name: str, data: dict) -> Scenario:
     ]
     if not isinstance(expect.get("handoff"), bool):
         raise ScenarioError(f"expect.handoff must be true or false, not {expect.get('handoff')!r}")
+    if not isinstance(expect.get("emergency", False), bool):
+        raise ScenarioError(f"expect.emergency must be true or false, not {expect['emergency']!r}")
     if slots and not data.get("provider"):
         raise ScenarioError("Slots need a provider to belong to")
-    names = set(slots) | {f"{label}_day" for label in slots}
+    names = set(slots) | {f"{label}_day" for label in slots} | {WRONG_BIRTH_DATE}
     for line in (data["caller"]["goal"], data["caller"]["twist"]):
         for _, field, _, _ in Formatter().parse(line):
             if field is not None and field not in names:
@@ -109,6 +114,7 @@ def _parse(name: str, data: dict) -> Scenario:
         twist=data["caller"]["twist"],
         expected_appointments=expected,
         expect_handoff=expect["handoff"],
+        expect_emergency=expect.get("emergency", False),
     )
 
 

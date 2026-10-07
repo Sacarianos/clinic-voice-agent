@@ -1,0 +1,15 @@
+summary: A Patient cancels a follow-up and the Slot is freed.
+patient: {given: Tobias, family: Ferreira}
+provider: {given: Imogen, family: Faraday}
+slots:
+  current: {weekday: 2, at: "10:30"}
+appointments:
+  existing: {slot: current, visit_type: follow_up}
+caller:
+  goal: Cancel your follow-up appointment with Dr. Imogen Faraday on {current_day}. You don't want a new one.
+  twist: >-
+    You start by saying only that you can't make your appointment. Once the receptionist finds it,
+    say yes to cancelling it, and decline when asked if you want another time.
+expect:
+  appointments: []
+  handoff: false

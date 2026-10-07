@@ -1,8 +1,15 @@
 """Scenarios are data files. Loading checks them, so a broken file fails before any call is paid for."""
 
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
+from clinic_evals.caller import persona
+from clinic_evals.record import Seeded
 from clinic_evals.scenario import SCENARIOS_DIR, ExpectedAppointment, ScenarioError, load_scenario, load_scenarios
+
+CLINIC = ZoneInfo("America/New_York")
 
 
 def test_the_bundled_scenarios_cover_a_plain_book_a_reschedule_and_a_request_for_a_person():
@@ -26,6 +33,45 @@ def test_the_bundled_scenarios_cover_a_plain_book_a_reschedule_and_a_request_for
     for scenario in scenarios.values():
         assert scenario.patient.given and scenario.patient.family
         assert scenario.goal and scenario.twist
+
+
+def test_the_bundled_scenarios_cover_the_twists_a_real_call_brings():
+    scenarios = {scenario.name: scenario for scenario in load_scenarios(SCENARIOS_DIR)}
+
+    assert set(scenarios) == {
+        "plain_book",
+        "reschedule",
+        "cancel",
+        "asks_for_a_person",
+        "wrong_dob_first",
+        "changes_mind",
+        "interrupts",
+        "mentions_chest_pain",
+        "proxy_caller",
+        "garbled_provider_name",
+    }
+    assert "{wrong_birth_date}" in scenarios["wrong_dob_first"].twist
+    assert scenarios["wrong_dob_first"].expected_appointments
+    [kept] = scenarios["changes_mind"].expected_appointments
+    assert kept.slot == "second"
+    assert scenarios["cancel"].appointments and scenarios["cancel"].expected_appointments == []
+    assert scenarios["mentions_chest_pain"].expect_emergency
+    assert not scenarios["mentions_chest_pain"].expect_handoff
+    assert scenarios["proxy_caller"].expect_handoff
+    assert scenarios["proxy_caller"].expected_appointments == []
+    assert scenarios["interrupts"].expected_appointments
+    assert scenarios["garbled_provider_name"].expected_appointments
+
+
+def test_every_bundled_scenario_gives_the_simulated_caller_a_complete_persona():
+    for scenario in load_scenarios(SCENARIOS_DIR):
+        starts = {label: datetime.combine(date(2026, 10, 9), spec.at, CLINIC) for label, spec in scenario.slots.items()}
+        seeded = Seeded("patient-1", "1961-03-03", "+15550000001", {}, starts, {})
+
+        system = persona(scenario, seeded)
+
+        assert f"{scenario.patient.given} {scenario.patient.family}, born March 3, 1961" in system
+        assert "{" not in system, scenario.name
 
 
 def test_a_scenario_reads_its_slots_appointments_and_expected_end_state(tmp_path):
@@ -102,3 +148,38 @@ expect: {appointments: [], handoff: false}
 
     with pytest.raises(ScenarioError, match="curent_day"):
         load_scenario(path)
+
+
+def test_a_scenario_can_expect_an_emergency_redirect_and_the_wrong_birth_date_in_the_twist(tmp_path):
+    path = tmp_path / "chest_pain.yaml"
+    path.write_text(
+        """
+summary: Chest pain.
+patient: {given: Desmond, family: Achterberg}
+provider: null
+caller:
+  goal: Say you have chest pain.
+  twist: Give {wrong_birth_date} as your date of birth first.
+expect: {appointments: [], handoff: false, emergency: true}
+"""
+    )
+
+    scenario = load_scenario(path)
+
+    assert scenario.expect_emergency
+    assert not scenario.expect_handoff
+
+
+def test_a_scenario_that_does_not_mention_emergency_expects_none(tmp_path):
+    path = tmp_path / "calm.yaml"
+    path.write_text(
+        """
+summary: Calm.
+patient: {given: Desmond, family: Achterberg}
+provider: null
+caller: {goal: Talk., twist: None.}
+expect: {appointments: [], handoff: false}
+"""
+    )
+
+    assert not load_scenario(path).expect_emergency
