@@ -36,9 +36,9 @@ class Ehr:
         return patient_id
 
     def unused_birth_date(self) -> str:
-        """A date of birth no Patient has, from the 1800s to keep clear of the seeded adults."""
+        """A plausible adult date of birth that no Patient has, so a test's own Patients are the only match."""
         for _ in range(20):
-            day = date(1800, 1, 1) + timedelta(days=random.randrange(36_500))
+            day = date(1935, 1, 1) + timedelta(days=random.randrange(70 * 365))
             bundle = self._fhir.get("Patient", params={"birthdate": day.isoformat(), "_summary": "count"})
             bundle.raise_for_status()
             if bundle.json()["total"] == 0:

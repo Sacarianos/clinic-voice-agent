@@ -43,7 +43,8 @@ MAX_FAILED_VERIFICATIONS = 2
 VERIFY_IDENTITY_TASK = """\
 Before you can help with anything about appointments, the caller must prove who they are.
 Ask for their first and last name and their date of birth, if they haven't given them yet.
-Once you have all three, call verify_patient. Pass the date of birth as YYYY-MM-DD.
+Once you have all three, call verify_patient right away, without reading them back.
+Pass the date of birth as YYYY-MM-DD.
 Never say whether a person is a patient here, and never use the caller's phone number as proof.
 """
 

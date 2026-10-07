@@ -95,6 +95,11 @@ class TextCall:
     def tool_results(self, name: str) -> list[Any]:
         return [call.result for call in self.tool_calls if call.name == name]
 
+    def __repr__(self) -> str:
+        lines = [f"{speaker}: {line}" for speaker, line in self.transcript]
+        tools = [f"{call.name}({call.arguments}) -> {call.result}" for call in self.tool_calls]
+        return "\n".join(["TextCall", *lines, f"state: {self.state}", *tools])
+
     async def __aenter__(self) -> "TextCall":
         started = asyncio.Event()
 
