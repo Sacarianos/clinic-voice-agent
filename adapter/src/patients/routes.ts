@@ -8,6 +8,7 @@ const verifyPatientBody = z.object({
   givenName: z.string().trim().min(1),
   familyName: z.string().trim().min(1),
   dateOfBirth: z.iso.date(),
+  familyNameSpelled: z.boolean().optional(),
 });
 
 export function patientRoutes(fhir: FhirClient) {
