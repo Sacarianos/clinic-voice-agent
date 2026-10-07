@@ -120,7 +120,10 @@ async def test_asking_for_another_time_during_the_read_back_offers_new_slots_wit
             "Sure. What is your full name and date of birth?",
             verify("Rosalind", "Okonkwo", born),
             "Thanks, Rosalind. Who would you like to see, and when?",
-            CallTool("find_slots", {"provider": faraday.name, "from_date": day, "to_date": day}),
+            CallTool(
+                "find_slots",
+                {"provider": faraday.name, "from_date": day, "to_date": day, "part_of_day": "morning"},
+            ),
             "Dr. Faraday has 9 AM. What is the visit for?",
             CallTool("choose_slot", {"slot_id": morning_slot, "visit_type": "sick_visit"}),
             CallTool(
@@ -136,7 +139,7 @@ async def test_asking_for_another_time_during_the_read_back_offers_new_slots_wit
             [
                 "I need to see someone, I've been feeling sick.",
                 f"Rosalind Okonkwo, {spoken(born)}.",
-                f"{faraday.name}, {spoken_day(morning)}.",
+                f"{faraday.name}, {spoken_day(morning)}, in the morning.",
                 "The 9 AM one, please. It's a sick visit.",
             ]
         )
@@ -144,8 +147,8 @@ async def test_asking_for_another_time_during_the_read_back_offers_new_slots_wit
 
         await call.say("Hmm, actually, does she have anything that afternoon instead?")
 
-        assert call.state == "find_slot"
-        assert "3 PM" in call.agent_lines[-1]
+        offered = [slot["slot_id"] for slot in call.tool_results("find_slots")[-1]["slots"]]
+        assert offered == [afternoon_slot]
 
         await call.converse(["Yes, 3 PM, same reason.", "Yes, please book it."])
 

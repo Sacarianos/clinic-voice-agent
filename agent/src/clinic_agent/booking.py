@@ -33,7 +33,8 @@ Offer the caller the open times find_slots just returned: two or three at most, 
 Provider's name, the day and the time. If none came back, say so and suggest another day, part of
 day or Provider. If they asked for a date past booking_window_ends, tell them how far out they can book.
 Find out what the visit is for: an annual physical, a sick visit or a follow-up.
-Once the caller has picked one of the offered times and you know the visit type, call choose_slot.
+As soon as the caller picks one of the offered times and you know the visit type, call choose_slot.
+Don't repeat the details or ask the caller to confirm them yourself: choose_slot reads them back.
 If they want other times, call find_slots again.
 """
 
