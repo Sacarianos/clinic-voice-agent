@@ -33,6 +33,15 @@ class Slot:
 
 
 @dataclass(frozen=True)
+class Appointment:
+    appointment_id: str
+    slot_id: str
+    provider_name: str
+    start: datetime  # in clinic wall-clock time, with its UTC offset
+    visit_type: VisitType
+
+
+@dataclass(frozen=True)
 class SlotSearch:
     slots: list[Slot]
     booking_window_last_day: date
@@ -95,13 +104,36 @@ class EhrAdapter:
             booking_window_last_day=date.fromisoformat(result["bookingWindowLastDay"]),
         )
 
+    async def appointments(self, patient_id: str) -> list[Appointment]:
+        """The Patient's upcoming appointments, earliest first."""
+        async with self._client() as client:
+            response = await client.get("/appointments", params={"patientId": patient_id})
+        response.raise_for_status()
+        return [
+            Appointment(a["appointmentId"], a["slotId"], a["providerName"], datetime.fromisoformat(a["start"]), a["visitType"])
+            for a in response.json()["appointments"]
+        ]
+
     async def book(
         self, *, patient_id: str, slot_id: str, visit_type: VisitType, idempotency_key: str
     ) -> WriteOutcome:
         body = {"patientId": patient_id, "slotId": slot_id, "visitType": visit_type, "idempotencyKey": idempotency_key}
+        return await self._write("/appointments", body)
+
+    async def reschedule(
+        self, *, patient_id: str, appointment_id: str, slot_id: str, idempotency_key: str
+    ) -> WriteOutcome:
+        body = {"patientId": patient_id, "slotId": slot_id, "idempotencyKey": idempotency_key}
+        return await self._write(f"/appointments/{appointment_id}/reschedule", body)
+
+    async def cancel(self, *, patient_id: str, appointment_id: str, idempotency_key: str) -> WriteOutcome:
+        body = {"patientId": patient_id, "idempotencyKey": idempotency_key}
+        return await self._write(f"/appointments/{appointment_id}/cancel", body)
+
+    async def _write(self, path: str, body: dict) -> WriteOutcome:
         try:
             async with self._client() as client:
-                response = await client.post("/appointments", json=body)
+                response = await client.post(path, json=body)
         except httpx.ConnectError:
             return WriteOutcome("failed")
         except httpx.TransportError:
