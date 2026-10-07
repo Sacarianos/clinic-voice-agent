@@ -75,8 +75,18 @@ class EhrAdapter:
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self.base_url, timeout=5)
 
-    async def verify_patient(self, *, given_name: str, family_name: str, date_of_birth: str) -> Verification:
-        body = {"givenName": given_name, "familyName": family_name, "dateOfBirth": date_of_birth}
+    async def verify_patient(
+        self, *, given_name: str, family_name: str, date_of_birth: str, family_name_spelled: bool = False
+    ) -> Verification:
+        """family_name_spelled says the Caller spelled the surname, so an exact surname may pick one of several
+        sound-alike Patients. Only the attempt that follows a spelling request may set it.
+        """
+        body = {
+            "givenName": given_name,
+            "familyName": family_name,
+            "dateOfBirth": date_of_birth,
+            "familyNameSpelled": family_name_spelled,
+        }
         async with self._client() as client:
             response = await client.post("/patients/verify", json=body)
         response.raise_for_status()

@@ -51,6 +51,12 @@ HANDOFF_AFTER_FAILED_VERIFICATION = (
 
 MAX_FAILED_VERIFICATIONS = 2
 
+# Never a guess between Patients. The Caller hears the same words as after a second failed attempt.
+AMBIGUOUS_AFTER_SPELLING = HandoffReason(
+    "Identity Verification matched more than one Patient, even with the last name spelled",
+    HANDOFF_AFTER_FAILED_VERIFICATION,
+)
+
 VERIFY_IDENTITY_TASK = """\
 Before you can help with anything about appointments, the caller must prove who they are.
 Ask for their first and last name and their date of birth, if they haven't given them yet.
@@ -117,10 +123,13 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         if not caller_is_the_patient:
             # A Proxy Caller's details are someone else's. They never reach the EHR, so no record is verified or linked.
             return {"status": "proxy_caller"}, await handoff(ehr, flow_manager, HANDOFF_REASONS["proxy_caller"])
+        # The flow, not the LLM, knows a spelling request came before this attempt (ADR 0003).
+        spelled = flow_manager.state.pop("spelling_requested", False)
         verification = await ehr.verify_patient(
             given_name=args["given_name"],
             family_name=args["family_name"],
             date_of_birth=args["date_of_birth"],
+            family_name_spelled=spelled,
         )
         if verification.status == "verified":
             flow_manager.state["patient_id"] = verification.patient_id
@@ -132,6 +141,9 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
                 reason = HandoffReason("Identity Verification failed twice", HANDOFF_AFTER_FAILED_VERIFICATION)
                 return {"status": "not_verified"}, await handoff(ehr, flow_manager, reason)
             return {"status": "not_verified"}, _verify_identity_node(VERIFICATION_FAILED, ehr)
+        if spelled:
+            return {"status": "ambiguous"}, await handoff(ehr, flow_manager, AMBIGUOUS_AFTER_SPELLING)
+        flow_manager.state["spelling_requested"] = True
         return {"status": "ambiguous"}, _verify_identity_node(SPELL_LAST_NAME, ehr)
 
     return FlowsFunctionSchema(

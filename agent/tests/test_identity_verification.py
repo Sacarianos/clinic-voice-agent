@@ -98,16 +98,17 @@ async def test_a_name_that_matches_two_patients_gets_a_spelling_request_that_is_
     async with start_call(
         [
             "Of course. Can I have your full name and date of birth?",
-            verify("Jo", "Smithe", wrong_birth_date),
-            verify("Jo", "Smithe", born),
-            verify("Jo", "SMITH", born),
-            "Thanks, Jo. Which day works for you?",
+            verify("Joanna", "Smith", wrong_birth_date),
+            verify("Joanna", "Smith", born),
+            verify("Joanna", "SMITH", born),
+            "Thanks, Joanna. Which day works for you?",
         ]
     ) as call:
         await call.say("I'd like to book a checkup.")
-        await call.say(f"Jo Smithe, {spoken(wrong_birth_date)}.")
+        await call.say(f"Joanna Smith, {spoken(wrong_birth_date)}.")
         await call.say(f"Oops, I mean {spoken(born)}.")
 
+        # Joanna Smith is one Patient's exact name, but speech recognition can hear Johanna Smyth that way.
         assert call.agent_lines[-1] == SPELL_LAST_NAME
         assert not call.ended
 
@@ -119,6 +120,29 @@ async def test_a_name_that_matches_two_patients_gets_a_spelling_request_that_is_
             {"status": "verified"},
         ]
         assert call.state == "intent"
+
+
+async def test_a_spelled_surname_that_still_matches_two_patients_ends_the_call_with_a_handoff(ehr, start_call):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Joanna", family="Smith", birth_date=born)
+    ehr.create_patient(given="Johanna", family="Smith", birth_date=born)
+
+    async with start_call(
+        [
+            "Of course. Can I have your full name and date of birth?",
+            verify("Joanna", "Smith", born),
+            verify("Joanna", "SMITH", born),
+        ]
+    ) as call:
+        await call.converse(["I'd like to book a checkup.", f"Joanna Smith, {spoken(born)}.", "S, M, I, T, H."])
+
+        assert call.tool_results("verify_patient") == [{"status": "ambiguous"}] * 2
+        assert call.agent_lines[-1] == HANDOFF_AFTER_FAILED_VERIFICATION
+        assert call.ended
+        assert call.state != "intent"
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert filed.patient_id is None
+        assert not filed.emergency
 
 
 @pytest.mark.scripted_only
