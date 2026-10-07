@@ -25,6 +25,7 @@ from pipecat.workers.runner import WorkerRunner
 
 from clinic_agent.config import ConfigError, require
 from clinic_agent.conversation import start_conversation
+from clinic_agent.logs import configure_logging
 from clinic_agent.pipeline import build_call
 from clinic_agent.services import VoiceServices, phone_services
 from clinic_agent.tracing import configure_tracing
@@ -183,10 +184,10 @@ def app_from_env(env: Mapping[str, str]) -> FastAPI:
 
 def main() -> None:
     env = os.environ
-    logger.remove()
-    logger.add(sys.stderr, level=env.get("LOG_LEVEL", "INFO"))
+    configure_logging(env.get("LOG_LEVEL", "INFO"))
     try:
         app = app_from_env(env)
     except ConfigError as error:
         sys.exit(f"clinic-voice-server: {error}")
-    uvicorn.run(app, host="127.0.0.1", port=int(env.get("PORT", DEFAULT_PORT)))
+    # Without uvicorn's own log config its loggers reach the masked setup above, like everything else.
+    uvicorn.run(app, host="127.0.0.1", port=int(env.get("PORT", DEFAULT_PORT)), log_config=None)

@@ -10,7 +10,8 @@ Logs and trace exports pass everything they write through `PHI.mask`. It masks i
   also learned, so the same name is masked when the agent or the Caller says it later in free text.
 - Dates with a year before this one are masked as dates of birth. Every Patient is an adult, and
   appointments are never in a past year, so scheduling dates stay readable in traces.
-- Phone numbers are masked by their shape: E.164, US formats, and seven or more digits said as words.
+- Phone numbers are masked by their shape: E.164 (URL-encoded too), US formats, and seven or more
+  digits said as words.
 
 The mask is process-wide because logs and the trace exporter are. What it learns from one call stays
 for later calls too, up to a limit, which costs nothing but a little over-masking.
@@ -92,6 +93,8 @@ _SPOKEN_DATE_OF_BIRTH = re.compile(
 
 _DIGIT_WORD = r"(?:zero|oh|one|two|three|four|five|six|seven|eight|nine)"
 _PHONES = [
+    # URL-encoded E.164, as in a query string: %2B15555550123.
+    re.compile(r"%2B\d{8,15}(?!\d)", re.IGNORECASE),
     re.compile(r"(?<![\w+-])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?![\w-])"),
     re.compile(r"(?<![\w+])\+\d{8,15}(?!\d)"),
     re.compile(rf"\b(?:{_DIGIT_WORD}[\s,.-]+){{6,}}{_DIGIT_WORD}\b", re.IGNORECASE),
