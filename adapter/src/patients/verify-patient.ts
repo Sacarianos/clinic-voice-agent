@@ -1,6 +1,6 @@
 import type { HumanName, Patient } from "fhir/r4";
 import type { FhirClient } from "../fhir/client.ts";
-import { normalizeName, soundsAlike } from "./names.ts";
+import { normalizeName, surnamesMatch } from "./names.ts";
 
 export type VerifyPatientRequest = {
   givenName: string;
@@ -23,8 +23,8 @@ export async function verifyPatient(fhir: FhirClient, request: VerifyPatientRequ
     return candidate ? [candidate] : [];
   });
 
-  // Sounding alike is loose (Smith and Smyth match). When the Caller's words single out some candidates
-  // exactly, for example after spelling the surname, those win.
+  // Surname matching is loose (Smith and Smyth match, so do Brennan and Brendan). When the Caller's words
+  // single out some candidates exactly, for example after spelling the surname, those win.
   candidates = preferExact(candidates, (candidate) => candidate.exactFamily);
   candidates = preferExact(candidates, (candidate) => candidate.exactGiven);
 
@@ -45,7 +45,7 @@ function matchName(name: HumanName, request: VerifyPatientRequest) {
   const family = name.family ?? "";
   const given = normalizeName(name.given?.[0] ?? "");
   const statedGiven = normalizeName(request.givenName);
-  if (given === "" || given[0] !== statedGiven[0] || !soundsAlike(request.familyName, family)) return undefined;
+  if (given === "" || given[0] !== statedGiven[0] || !surnamesMatch(request.familyName, family)) return undefined;
   return {
     exactFamily: normalizeName(family) === normalizeName(request.familyName),
     exactGiven: given === statedGiven,
