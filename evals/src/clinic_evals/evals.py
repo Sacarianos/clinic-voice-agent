@@ -27,6 +27,8 @@ class RunResult:
     repeat: int  # 1 for the first run of the scenario
     record: RunRecord
     grades: list[Grade]
+    started: datetime
+    finished: datetime
 
 
 async def run_evals(
@@ -46,10 +48,11 @@ async def run_evals(
     results = []
     for scenario in scenarios:
         for repeat in range(1, repeats + 1):
+            started = datetime.now(UTC)
             record = await run_scenario(
                 scenario, *ehr_urls, agent=agent, caller=caller, reply_timeout_secs=reply_timeout_secs
             )
-            result = RunResult(batch_id, scenario.name, repeat, record, grade(record))
+            result = RunResult(batch_id, scenario.name, repeat, record, grade(record), started, datetime.now(UTC))
             results.append(result)
             print(_run_line(result), flush=True)
             _save(results, config, results_dir / f"{batch_id}.json")
@@ -68,6 +71,8 @@ def _push(langfuse: Langfuse, result: RunResult, config: str) -> None:
             repeat=result.repeat,
             ending=result.record.ending,
             grades=result.grades,
+            started=result.started,
+            finished=result.finished,
         )
     except (LangfuseError, httpx.HTTPError) as error:
         print(f"Could not push {result.scenario} run {result.repeat} to Langfuse: {error}", file=sys.stderr)

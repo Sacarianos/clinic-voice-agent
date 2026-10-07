@@ -1,13 +1,17 @@
-"""Pushes eval scores to Langfuse Cloud through its public ingestion API.
+"""Pushes eval scores to Langfuse Cloud.
 
-Each run becomes one trace, tagged with the LLM config and the scenario, in a session for the whole
-eval batch. Each grader's verdict is a boolean score on that trace, with the reason as its comment.
-Transcripts stay in the local results file.
+Each run becomes one trace, sent as a single OpenTelemetry span: tagged with the LLM config and the
+scenario, in a session for the whole eval batch. Each grader's verdict is a boolean score on that
+trace, with the reason as its comment. Transcripts stay in the local results file.
+
+This uses its own exporter call rather than the process-wide tracer, which belongs to the agent's
+call tracing. Langfuse's older batch ingestion API is being retired, so it isn't used.
 """
 
-import uuid
+import json
+import secrets
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 
 import httpx
 
@@ -34,22 +38,41 @@ class Langfuse:
         return cls(env.get("LANGFUSE_BASE_URL") or DEFAULT_LANGFUSE_BASE_URL, public_key, secret_key)
 
     def push_run(
-        self, *, batch_id: str, config: str, scenario: str, repeat: int, ending: str, grades: list[Grade]
+        self,
+        *,
+        batch_id: str,
+        config: str,
+        scenario: str,
+        repeat: int,
+        ending: str,
+        grades: list[Grade],
+        started: datetime,
+        finished: datetime,
     ) -> str:
         """Sends one run as a trace with a score per grader. Returns the trace id."""
-        trace_id = uuid.uuid4().hex
-        trace = {
-            "id": trace_id,
-            "timestamp": _now(),
-            "name": f"eval {scenario}",
-            "sessionId": batch_id,
-            "tags": ["eval", config, scenario],
-            "metadata": {"config": config, "scenario": scenario, "repeat": repeat, "ending": ending},
-            "output": {grade.grader: grade.passed for grade in grades},
+        trace_id = secrets.token_hex(16)
+        attributes = {
+            "langfuse.trace.name": f"eval {scenario}",
+            "langfuse.session.id": batch_id,
+            "langfuse.trace.tags": ["eval", config, scenario],
+            "langfuse.trace.metadata.config": config,
+            "langfuse.trace.metadata.scenario": scenario,
+            "langfuse.trace.metadata.repeat": str(repeat),
+            "langfuse.trace.metadata.ending": ending,
+            "langfuse.trace.output": json.dumps({grade.grader: grade.passed for grade in grades}),
         }
-        scores = [
-            {
-                "id": uuid.uuid4().hex,
+        span = {
+            "traceId": trace_id,
+            "spanId": secrets.token_hex(8),
+            "name": f"eval {scenario}",
+            "kind": 1,
+            "startTimeUnixNano": str(int(started.timestamp() * 1e9)),
+            "endTimeUnixNano": str(int(finished.timestamp() * 1e9)),
+            "attributes": [{"key": key, "value": _otel_value(value)} for key, value in attributes.items()],
+        }
+        self._send_span(span)
+        for grade in grades:
+            score = {
                 "traceId": trace_id,
                 "name": grade.grader,
                 "value": 1 if grade.passed else 0,
@@ -57,25 +80,29 @@ class Langfuse:
                 "comment": grade.reason,
                 "metadata": {"config": config, "scenario": scenario},
             }
-            for grade in grades
-        ]
-        self.ingest([_event("trace-create", trace), *(_event("score-create", score) for score in scores)])
+            self._http.post("/api/public/scores", json=score).raise_for_status()
         return trace_id
 
-    def ingest(self, events: list[dict]) -> None:
-        response = self._http.post("/api/public/ingestion", json={"batch": events})
+    def _send_span(self, span: dict) -> None:
+        body = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "clinic-evals"}}]},
+                    "scopeSpans": [{"scope": {"name": "clinic-evals"}, "spans": [span]}],
+                }
+            ]
+        }
+        response = self._http.post("/api/public/otel/v1/traces", json=body)
         response.raise_for_status()
-        errors = response.json().get("errors", [])
-        if errors:
-            raise LangfuseError(f"Langfuse refused {len(errors)} of {len(events)} events: {errors}")
+        rejected = (response.json() or {}).get("partialSuccess", {}).get("rejectedSpans")
+        if rejected:
+            raise LangfuseError(f"Langfuse rejected the run's trace: {response.json()['partialSuccess']}")
 
     def close(self) -> None:
         self._http.close()
 
 
-def _event(kind: str, body: dict) -> dict:
-    return {"id": uuid.uuid4().hex, "type": kind, "timestamp": _now(), "body": body}
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+def _otel_value(value: str | list[str]) -> dict:
+    if isinstance(value, list):
+        return {"arrayValue": {"values": [{"stringValue": item} for item in value]}}
+    return {"stringValue": value}
