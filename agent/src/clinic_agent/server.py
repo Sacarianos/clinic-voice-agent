@@ -1,8 +1,11 @@
 """Voice server: the Twilio webhook and the media stream WebSocket."""
 
+import base64
+import hashlib
+import hmac
 import os
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from xml.sax.saxutils import quoteattr
 
@@ -19,7 +22,7 @@ from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
 from pipecat.workers.runner import WorkerRunner
 
-from clinic_agent.config import ConfigError
+from clinic_agent.config import ConfigError, require
 from clinic_agent.conversation import start_conversation
 from clinic_agent.pipeline import build_call
 from clinic_agent.services import VoiceServices, phone_services
@@ -33,7 +36,7 @@ UNKNOWN_CALLER_PHONE = "unknown"
 
 @dataclass(frozen=True)
 class TwilioAccount:
-    """Lets the agent hang up through Twilio's REST API when it ends a call."""
+    """Checks that webhooks come from Twilio, and lets the agent hang up through Twilio's REST API."""
 
     account_sid: str
     auth_token: str
@@ -42,17 +45,26 @@ class TwilioAccount:
 def create_app(
     make_services: Callable[[], VoiceServices],
     *,
-    twilio: TwilioAccount | None = None,
+    twilio: TwilioAccount,
+    hang_up_through_twilio: bool = True,
     tracing: bool = False,
 ) -> FastAPI:
     app = FastAPI()
 
     @app.post("/voice")
     async def voice(request: Request) -> Response:
-        # Twilio only streams to wss://, and ngrok keeps the public host in the Host header.
+        form = await request.form()
+        # Twilio signs the https URL set in its console. ngrok ends TLS and forwards plain HTTP, but keeps
+        # that public host in the Host header, so the URL rebuilt from it is the one Twilio signed.
+        public_url = str(request.url.replace(scheme="https"))
+        signature = request.headers.get("x-twilio-signature")
+        if not _signed_by_twilio(twilio.auth_token, public_url, form.multi_items(), signature):
+            logger.warning(f"Refused a webhook without a valid Twilio signature for {public_url}")
+            return Response(status_code=403)
+        # Twilio only streams to wss://.
         stream_url = f"wss://{request.headers['host']}/ws"
         # The Caller's number rides along as a stream parameter. Callback Requests call it back.
-        caller = (await request.form()).get("From")
+        caller = form.get("From")
         parameter = f"<Parameter name={quoteattr('from_number')} value={quoteattr(str(caller))}/>" if caller else ""
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -67,9 +79,9 @@ def create_app(
         serializer = TwilioFrameSerializer(
             stream_sid=call_data.stream_id,
             call_sid=call_data.call_id,
-            account_sid=twilio.account_sid if twilio else "",
-            auth_token=twilio.auth_token if twilio else "",
-            params=TwilioFrameSerializer.InputParams(auto_hang_up=twilio is not None),
+            account_sid=twilio.account_sid,
+            auth_token=twilio.auth_token,
+            params=TwilioFrameSerializer.InputParams(auto_hang_up=hang_up_through_twilio),
         )
         transport = FastAPIWebsocketTransport(
             websocket=websocket,
@@ -130,9 +142,25 @@ def _latency_log() -> UserBotLatencyObserver:
     return observer
 
 
-def _twilio_account(env: Mapping[str, str]) -> TwilioAccount | None:
-    account_sid, auth_token = env.get("TWILIO_ACCOUNT_SID"), env.get("TWILIO_AUTH_TOKEN")
-    return TwilioAccount(account_sid, auth_token) if account_sid and auth_token else None
+def _signed_by_twilio(auth_token: str, url: str, form: Iterable[tuple[str, str]], signature: str | None) -> bool:
+    """Twilio signs a webhook with base64 HMAC-SHA1, keyed by the auth token, of the URL it called followed
+    by every POST parameter's name and value, sorted by name.
+    """
+    if not signature:
+        return False
+    signed = url + "".join(name + value for name, value in sorted(form))
+    expected = hmac.new(auth_token.encode(), signed.encode(), hashlib.sha1).digest()
+    return hmac.compare_digest(base64.b64encode(expected).decode(), signature)
+
+
+def app_from_env(env: Mapping[str, str]) -> FastAPI:
+    """Raises ConfigError when a key the server needs is missing."""
+    make_services = phone_services(env)
+    twilio = TwilioAccount(
+        account_sid=require(env, "TWILIO_ACCOUNT_SID", "Hanging up calls through Twilio"),
+        auth_token=require(env, "TWILIO_AUTH_TOKEN", "Checking that webhooks come from Twilio"),
+    )
+    return create_app(make_services, twilio=twilio, tracing=configure_tracing(env))
 
 
 def main() -> None:
@@ -140,8 +168,7 @@ def main() -> None:
     logger.remove()
     logger.add(sys.stderr, level=env.get("LOG_LEVEL", "INFO"))
     try:
-        make_services = phone_services(env)
+        app = app_from_env(env)
     except ConfigError as error:
         sys.exit(f"clinic-voice-server: {error}")
-    app = create_app(make_services, twilio=_twilio_account(env), tracing=configure_tracing(env))
     uvicorn.run(app, host="127.0.0.1", port=int(env.get("PORT", DEFAULT_PORT)))

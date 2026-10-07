@@ -85,7 +85,7 @@ Booking lives in `agent/src/clinic_agent/booking.py`. From Intent the agent sear
 
 A Handoff files a Callback Request through the adapter and tells the Caller staff will call back. It fires on a request for a person, a Proxy Caller, a new patient, a clinical question, and a second failed verification. An emergency mention triggers an Emergency Redirect from any state, before or after verification: the agent says to hang up and dial 911, files an emergency Callback Request and ends the call. Both tools are offered in every node as flow-wide functions, as is `get_clinic_info`, which answers Clinic Questions from the static config in `clinic.py`. If a Callback Request can't be saved, the Caller is told so instead of being promised a callback. The number it calls back comes from Twilio's `From`: `/voice` passes it to the media stream as a `from_number` stream parameter. It is never used to verify anyone.
 
-You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 4.5 and `ANTHROPIC_API_KEY`. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. With `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` set, the agent can hang up calls itself. With both Langfuse keys set, every call is traced to Langfuse Cloud.
+You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 4.5 and `ANTHROPIC_API_KEY`. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. The server also needs `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`: the agent hangs up calls through Twilio's API, and checks that every `/voice` request comes from Twilio. With both Langfuse keys set, every call is traced to Langfuse Cloud.
 
 Start the server, then the tunnel in a second terminal:
 
@@ -102,6 +102,8 @@ ngrok http 8765
 The server listens on `127.0.0.1:8765`. Set `PORT` to change it and `LOG_LEVEL=DEBUG` to see every frame. Your free ngrok account has one static domain: `ngrok http 8765 --domain <your-domain>` keeps the URL the same between runs, so the Twilio setting below never changes.
 
 In the Twilio Console, open Phone Numbers, then Active numbers, then your number. Under Voice Configuration, set "A call comes in" to Webhook, `https://<your-ngrok-domain>/voice`, HTTP POST, and save. The trial account only takes calls from verified numbers and plays a trial notice before the agent picks up.
+
+Twilio signs each webhook with your auth token over the exact URL in that setting. ngrok ends TLS and forwards plain HTTP to the server, but it keeps the public host in the `Host` header, so the server rebuilds `https://<Host>/voice` and checks the `X-Twilio-Signature` header against it. A request without a valid signature gets a 403 and no TwiML, and the server logs the URL it checked. If real calls get a 403, compare that URL with the console setting: it must be `https`, with no port and no trailing slash, and ngrok must not rewrite the host header (no `--host-header` flag). `TWILIO_AUTH_TOKEN` must be the primary auth token of the account that owns the number.
 
 In Langfuse, each call is one trace session named by its Twilio CallSid. The `conversation` span holds one `turn` span per exchange, with STT, LLM and TTS spans under it. Their `metrics.ttfb` attributes give time to first byte, and `turn.user_bot_latency_seconds` gives voice-to-voice latency. The server log prints a breakdown of each response's latency too.
 
