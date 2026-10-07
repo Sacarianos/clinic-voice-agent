@@ -10,7 +10,8 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTrace
 from starlette.testclient import TestClient
 from twilio_stream import CALL_SID, hang_up, next_media_message, start_media_stream
 
-from clinic_agent.server import VoiceServices, create_app
+from clinic_agent.server import create_app
+from clinic_agent.services import VoiceServices
 from clinic_agent.tracing import configure_tracing
 
 

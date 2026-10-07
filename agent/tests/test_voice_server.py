@@ -4,7 +4,8 @@ from fakes import RecordingTTS, ScriptedLLM, SilentSTT
 from starlette.testclient import TestClient
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
-from clinic_agent.server import VoiceServices, create_app
+from clinic_agent.server import create_app
+from clinic_agent.services import VoiceServices
 
 GREETING = "Thanks for calling the clinic. How can I help you today?"
 

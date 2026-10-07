@@ -7,11 +7,9 @@ from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.llm_service import LLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
 
+from clinic_agent.config import ConfigError, require
+
 DEFAULT_LLM_CONFIG = "haiku"
-
-
-class LLMConfigError(ValueError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -32,10 +30,8 @@ def create_llm(env: Mapping[str, str], *, system_instruction: str) -> LLMService
     config = LLM_CONFIGS.get(name)
     if config is None:
         known = ", ".join(sorted(LLM_CONFIGS))
-        raise LLMConfigError(f"Unknown LLM_CONFIG {name!r}. Known configs: {known}")
-    api_key = env.get(config.api_key_env)
-    if not api_key:
-        raise LLMConfigError(f"LLM config {name!r} needs {config.api_key_env} to be set")
+        raise ConfigError(f"Unknown LLM_CONFIG {name!r}. Known configs: {known}")
+    api_key = require(env, config.api_key_env, f"LLM config {name!r}")
     return config.service(
         api_key=api_key,
         settings=config.service.Settings(model=config.model, system_instruction=system_instruction),

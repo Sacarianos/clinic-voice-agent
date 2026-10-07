@@ -2,7 +2,8 @@ import pytest
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
 
-from clinic_agent.llm import LLMConfigError, create_llm
+from clinic_agent.config import ConfigError
+from clinic_agent.llm import create_llm
 
 PROMPT = "You are the clinic receptionist."
 
@@ -26,10 +27,10 @@ def test_gemini_config_uses_gemini_3_6_flash_through_openrouter():
 
 
 def test_unknown_llm_config_names_the_known_ones():
-    with pytest.raises(LLMConfigError, match="'gpt'.*gemini, haiku"):
+    with pytest.raises(ConfigError, match="'gpt'.*gemini, haiku"):
         create_llm({"LLM_CONFIG": "gpt"}, system_instruction=PROMPT)
 
 
 def test_missing_api_key_names_the_variable_to_set():
-    with pytest.raises(LLMConfigError, match="OPENROUTER_API_KEY"):
+    with pytest.raises(ConfigError, match="OPENROUTER_API_KEY"):
         create_llm({"LLM_CONFIG": "gemini", "ANTHROPIC_API_KEY": "placeholder"}, system_instruction=PROMPT)
