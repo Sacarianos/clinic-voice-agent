@@ -7,7 +7,8 @@ out. The LLM is whatever it is given: a real configured model or a scripted fake
 
 import asyncio
 import uuid
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
 from pipecat.frames.frames import (
@@ -21,6 +22,7 @@ from pipecat.frames.frames import (
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
+    MetricsFrame,
     ProposedUserStartedSpeakingFrame,
     ProposedUserStoppedSpeakingFrame,
     SystemFrame,
@@ -30,6 +32,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
     TTSTextFrame,
 )
+from pipecat.metrics.metrics import LLMTokenUsage, LLMUsageMetricsData
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.pipeline.worker import PipelineParams
 from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregatorParams
@@ -53,6 +56,7 @@ class ToolCall:
     arguments: dict
     result: Any
     transcript_position: int  # how many transcript lines came before the result, to tell what was said before and after
+    duration_secs: float = field(default=0.0, compare=False)  # from the LLM asking for the tool to its result
 
 
 class TextCall:
@@ -75,6 +79,7 @@ class TextCall:
         self.transcript: list[tuple[str, str]] = []  # ("caller" | "agent", line), in order
         self.tool_calls: list[ToolCall] = []
         self.offered_tools: list[list[str]] = []  # tool names the LLM was offered, one list per LLM run
+        self.llm_usage: list[LLMTokenUsage] = []  # what each LLM run used, as the LLM service reports it
         self._ehr = ehr
         self._reply_timeout_secs = reply_timeout_secs
         self._speech = _SpokenText(self.transcript)
@@ -84,7 +89,7 @@ class TextCall:
             hear=[],
             speak=[self._speech],
             user_params=LLMUserAggregatorParams(user_turn_strategies=ExternalUserTurnStrategies()),
-            params=PipelineParams(),
+            params=PipelineParams(enable_usage_metrics=True),
             idle_timeout_secs=None,
             enable_rtvi=False,
             observers=[self._watch],
@@ -255,7 +260,7 @@ class _TurnWatch(BaseObserver):
         self._llm = llm
         self._call = call
         self._llm_running = False
-        self._tools_running: set[str] = set()
+        self._tools_running: dict[str, float] = {}  # tool call id -> when it started
         self._markers: dict[str, _MarkerArrival] = {}
         self._llm_ran = asyncio.Condition()
 
@@ -291,8 +296,11 @@ class _TurnWatch(BaseObserver):
         elif isinstance(frame, LLMFullResponseEndFrame) and from_llm:
             self._llm_running = False
         elif isinstance(frame, FunctionCallsStartedFrame) and from_llm:
-            self._tools_running.update(call.tool_call_id for call in frame.function_calls)
+            self._tools_running.update({call.tool_call_id: time.perf_counter() for call in frame.function_calls})
         elif isinstance(frame, FunctionCallResultFrame) and from_llm:
-            self._tools_running.discard(frame.tool_call_id)
+            started = self._tools_running.pop(frame.tool_call_id, None)
+            took = time.perf_counter() - started if started is not None else 0.0
             position = len(self._call.transcript)
-            self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result, position))
+            self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result, position, took))
+        elif isinstance(frame, MetricsFrame) and from_llm:
+            self._call.llm_usage += [data.value for data in frame.data if isinstance(data, LLMUsageMetricsData)]

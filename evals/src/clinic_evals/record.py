@@ -1,11 +1,14 @@
 """What one eval run leaves behind for the graders: the call as it happened and the EHR afterwards."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from clinic_agent.text_call import ToolCall
 from clinic_evals.scenario import Scenario
+
+if TYPE_CHECKING:  # noise imports the Caller, which imports this module
+    from clinic_evals.noise import AppliedConfusion
 
 Ending = Literal["caller_hung_up", "agent_ended", "turn_limit", "error"]
 
@@ -53,6 +56,16 @@ class EndState:
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    """What the agent's LLM used over one call. Input is only the part that did not come from the prompt cache."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+@dataclass(frozen=True)
 class RunRecord:
     scenario: Scenario
     seeded: Seeded
@@ -61,6 +74,9 @@ class RunRecord:
     end_state: EndState
     ending: Ending
     error: str | None = None
+    noise: list["AppliedConfusion"] = field(default_factory=list)  # what the noise injector garbled on the Caller's lines
+    turn_secs: list[float] = field(default_factory=list)  # per Caller line: from saying it to the agent finishing its turn
+    usage: TokenUsage = TokenUsage()  # the agent's LLM, not the simulated Caller's
 
     def slot_label(self, slot_id: str) -> str:
         """The scenario's name for a Slot, quoted, or the Slot's id when the scenario didn't make it."""
