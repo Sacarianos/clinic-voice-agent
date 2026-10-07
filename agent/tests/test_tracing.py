@@ -97,7 +97,7 @@ def test_a_call_is_traced_to_langfuse_as_one_conversation_keyed_by_the_call_sid(
     with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
         start_media_stream(twilio)
         next_media_message(twilio)
-        hang_up(twilio)
+        hang_up(twilio, app)
         conversation = langfuse.wait_for_span("conversation")
 
     basic_auth = "Basic " + base64.b64encode(b"pk-lf-test:sk-lf-test").decode()

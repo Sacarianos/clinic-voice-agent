@@ -124,7 +124,7 @@ def test_caller_hears_the_agent_greet_them_as_soon_as_the_call_connects():
     with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
         start_media_stream(twilio)
         audio = next_media_message(twilio)
-        hang_up(twilio)
+        hang_up(twilio, app)
 
     assert audio["streamSid"] == STREAM_SID
     assert audio["media"]["payload"]
@@ -147,18 +147,18 @@ def test_a_callback_request_filed_on_a_phone_call_has_the_number_twilio_passed_a
     try:
         with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
             start_media_stream(twilio, from_number=phone)
-            filed = _wait_for_callback_request(ehr, phone)
-            hang_up(twilio)
+            [filed] = _wait_for(lambda: ehr.callback_requests_from(phone), f"a Callback Request for {phone}")
+            hang_up(twilio, app)
     finally:
         ehr.delete_callback_requests_from(phone)
 
     assert "asked to speak to a person" in filed.reason.lower()
 
 
-def _wait_for_callback_request(ehr, phone, seconds=10):
+def _wait_for(found, what, seconds=10):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if found := ehr.callback_requests_from(phone):
-            return found[0]
+        if result := found():
+            return result
         time.sleep(0.1)
-    raise AssertionError(f"no Callback Request for {phone} within {seconds}s")
+    raise AssertionError(f"no sign of {what} within {seconds}s")

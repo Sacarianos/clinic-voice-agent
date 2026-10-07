@@ -1,5 +1,6 @@
 """Voice server: the Twilio webhook and the media stream WebSocket."""
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -72,8 +73,18 @@ def create_app(
         )
         return Response(content=twiml, media_type="application/xml")
 
+    # Tests wait for this to drop back to 0 after hanging up, so they don't tear a call down mid-cleanup.
+    app.state.calls_in_progress = 0
+
     @app.websocket("/ws")
     async def media_stream(websocket: WebSocket) -> None:
+        app.state.calls_in_progress += 1
+        try:
+            await run_call(websocket)
+        finally:
+            app.state.calls_in_progress -= 1
+
+    async def run_call(websocket: WebSocket) -> None:
         await websocket.accept()
         _, call_data = await parse_telephony_websocket(websocket)
         serializer = TwilioFrameSerializer(
@@ -111,12 +122,19 @@ def create_app(
             observers=[_latency_log()],
         )
 
+        starting: list[asyncio.Task] = []
+
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
+            starting.append(asyncio.current_task())
             await start_conversation(call, services.ehr, call_data.from_number or UNKNOWN_CALLER_PHONE)
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
+            # Starting the conversation waits until the greeting has been spoken. If the Caller hangs up
+            # first, it never is, and the transport would wait for that start forever before shutting down.
+            for task in starting:
+                task.cancel()
             await call.worker.cancel()
 
         runner = WorkerRunner(handle_sigint=False)  # uvicorn owns the signals
