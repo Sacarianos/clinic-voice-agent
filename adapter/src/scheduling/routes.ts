@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { FhirClient } from "../fhir/client.ts";
 import { validJson, validQuery } from "../http.ts";
-import { book, VISIT_TYPES, type VisitType } from "./book.ts";
+import { listAppointments, VISIT_TYPES, type VisitType } from "./appointments.ts";
+import { book } from "./book.ts";
 import { findSlots } from "./find-slots.ts";
 import { loadProviders } from "./providers.ts";
 
@@ -36,6 +37,12 @@ const bookBody = z.object({
   idempotencyKey: z.string().min(8).max(64),
 });
 
+const listAppointmentsQuery = z.object({ patientId: z.string().min(1) });
+
 export function appointmentRoutes(fhir: FhirClient) {
-  return new Hono().post("/", validJson(bookBody), async (c) => c.json(await book(fhir, c.req.valid("json"), new Date())));
+  return new Hono()
+    .get("/", validQuery(listAppointmentsQuery), async (c) =>
+      c.json({ appointments: await listAppointments(fhir, c.req.valid("query").patientId, new Date()) }),
+    )
+    .post("/", validJson(bookBody), async (c) => c.json(await book(fhir, c.req.valid("json"), new Date())));
 }

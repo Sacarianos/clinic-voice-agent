@@ -1,19 +1,17 @@
 import type { Appointment, Bundle, Slot } from "fhir/r4";
 import { bookingWindow, IDEMPOTENCY_KEY_SYSTEM, isInBookingWindow } from "../clinic.ts";
 import { EhrUnavailableError, type FhirClient } from "../fhir/client.ts";
-import { offeredSlot } from "./find-slots.ts";
-import { loadProviders, type Providers } from "./providers.ts";
 import type { WriteOutcome } from "../write-outcome.ts";
-
-export const VISIT_TYPES = {
-  annual_physical: "Annual physical",
-  sick_visit: "Sick visit",
-  follow_up: "Follow-up",
-} as const;
-
-export type VisitType = keyof typeof VISIT_TYPES;
-
-const VISIT_TYPE_SYSTEM = "https://clinic.example/fhir/CodeSystem/visit-type";
+import {
+  appointmentDetails,
+  scheduleIdOf,
+  slotIdOf,
+  VISIT_TYPE_SYSTEM,
+  VISIT_TYPES,
+  type AppointmentDetails,
+  type VisitType,
+} from "./appointments.ts";
+import { loadProviders, type Providers } from "./providers.ts";
 
 export type BookRequest = {
   patientId: string;
@@ -23,20 +21,9 @@ export type BookRequest = {
   idempotencyKey: string;
 };
 
-export type BookedAppointment = {
-  appointmentId: string;
-  patientId: string;
-  slotId: string;
-  providerId: string;
-  providerName: string;
-  start: string;
-  end: string;
-  visitType: VisitType;
-};
-
 export type BookRejection = "slot_taken" | "slot_not_found" | "outside_booking_window";
 
-export type BookResult = WriteOutcome<{ appointment: BookedAppointment }, BookRejection>;
+export type BookResult = WriteOutcome<{ appointment: AppointmentDetails }, BookRejection>;
 
 // Creates the Appointment and marks its Slot busy in one FHIR transaction. HAPI doesn't check that a
 // Slot is free, so the guard against double-booking is the Slot's version: the transaction only
@@ -50,7 +37,7 @@ export async function book(fhir: FhirClient, request: BookRequest, now: Date): P
 
     const slot = await fhir.read<Slot>("Slot", request.slotId);
     const providers = await loadProviders(fhir);
-    const provider = slot && providers.bySchedule.get(scheduleId(slot));
+    const provider = slot && providers.bySchedule.get(scheduleIdOf(slot));
     if (!slot || !provider) return { outcome: "rejected", reason: "slot_not_found" };
     if (!isInBookingWindow(new Date(slot.start), bookingWindow(now))) {
       return { outcome: "rejected", reason: "outside_booking_window" };
@@ -115,29 +102,11 @@ async function bookedWithKey(fhir: FhirClient, idempotencyKey: string): Promise<
     identifier: `${IDEMPOTENCY_KEY_SYSTEM}|${idempotencyKey}`,
   });
   if (!appointment) return undefined;
-  const slotId = appointment.slot?.[0]?.reference?.split("/")[1] ?? "";
-  const slot = await fhir.read<Slot>("Slot", slotId);
+  const slot = await fhir.read<Slot>("Slot", slotIdOf(appointment));
   if (!slot) throw new Error(`Appointment ${appointment.id} has no Slot`);
   return describe(appointment, slot, await loadProviders(fhir));
 }
 
 function describe(appointment: Appointment, slot: Slot, providers: Providers): BookResult {
-  const provider = providers.bySchedule.get(scheduleId(slot))!;
-  const patient = appointment.participant.find((participant) => participant.actor?.reference?.startsWith("Patient/"));
-  const { slotId, providerId, providerName, start, end } = offeredSlot(slot, provider);
-  return {
-    outcome: "succeeded",
-    appointment: {
-      appointmentId: appointment.id!,
-      patientId: patient!.actor!.reference!.split("/")[1]!,
-      slotId,
-      providerId,
-      providerName,
-      start,
-      end,
-      visitType: appointment.appointmentType!.coding![0]!.code as VisitType,
-    },
-  };
+  return { outcome: "succeeded", appointment: appointmentDetails(appointment, slot, providers) };
 }
-
-const scheduleId = (slot: Slot) => slot.schedule.reference?.split("/")[1] ?? "";
