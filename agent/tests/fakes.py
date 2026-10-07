@@ -21,12 +21,12 @@ from pipecat.frames.frames import (
     TTSAudioRawFrame,
 )
 from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor, FrameProcessorSetup
 from pipecat.services.llm_service import LLMService
 from pipecat.services.settings import LLMSettings, TTSSettings
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.time import time_now_iso8601
-from pipecat.utils.tracing.service_decorators import traced_llm, traced_tts
+from pipecat.utils.tracing.service_decorators import traced_llm, traced_stt, traced_tts
 
 
 @dataclass(frozen=True)
@@ -109,13 +109,21 @@ class ScriptedCaller(FrameProcessor):
     """Stands in for STT and a Caller on the phone. Each line answers the agent's next stretch of speech.
 
     A plain line comes a moment after the agent stops talking. A TalkOver line comes a moment after it
-    starts, and cuts it off. Each line arrives as a finished transcript, the way Deepgram delivers one.
+    starts, and cuts it off. Each line arrives as a finished transcript, the way Deepgram delivers one,
+    and with tracing on it is traced as an `stt` span holding the transcript, as Deepgram's are.
     """
 
     def __init__(self, lines: list[str | TalkOver], pause_secs: float = 0.3):
         super().__init__()
         self.lines = list(lines)
         self._pause_secs = pause_secs
+        self._tracing_enabled = False
+
+    async def setup(self, setup: FrameProcessorSetup):
+        await super().setup(setup)
+        # Pipecat's STT tracing reads these, as it does on a real STT service.
+        self._tracing_enabled = setup.enable_tracing
+        self._tracing_context = setup.tracing_context
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -129,6 +137,7 @@ class ScriptedCaller(FrameProcessor):
             line = self.lines.pop(0)
             self.create_task(self._say(line.line if talks_over else line))
 
+    @traced_stt
     async def _say(self, line: str):
         await asyncio.sleep(self._pause_secs)
         await self.push_frame(
