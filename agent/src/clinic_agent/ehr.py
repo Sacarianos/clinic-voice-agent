@@ -116,6 +116,12 @@ class EhrAdapter:
             booking_window_last_day=date.fromisoformat(result["bookingWindowLastDay"]),
         )
 
+    async def slot_is_free(self, slot_id: str) -> bool:
+        async with self._client() as client:
+            response = await client.get(f"/slots/{slot_id}")
+        response.raise_for_status()
+        return response.json()["slot"]["status"] == "free"
+
     async def appointments(self, patient_id: str) -> list[Appointment]:
         """The Patient's upcoming appointments, earliest first."""
         async with self._client() as client:

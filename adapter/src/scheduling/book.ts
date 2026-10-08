@@ -13,6 +13,7 @@ import {
   type VisitType,
 } from "./appointments.ts";
 import { loadProviders, type Providers } from "./providers.ts";
+import { taken } from "./slot-holds.ts";
 
 export type BookRequest = {
   patientId: string;
@@ -37,7 +38,7 @@ export async function book(fhir: FhirClient, request: BookRequest, now: Date): P
     if (earlier) return earlier;
 
     const providers = await loadProviders(fhir);
-    const taking = await slotToTake(fhir, request.slotId, providers, now);
+    const taking = await slotToTake(fhir, request.slotId, providers, now, request.idempotencyKey);
     if ("rejection" in taking) return { outcome: "rejected", reason: taking.rejection };
     const { slot, provider } = taking;
 
@@ -62,7 +63,7 @@ export async function book(fhir: FhirClient, request: BookRequest, now: Date): P
       type: "transaction",
       entry: [
         {
-          resource: { ...slot, status: "busy" },
+          resource: taken(slot, request.idempotencyKey),
           request: { method: "PUT", url: `Slot/${slot.id}`, ifMatch: `W/"${slot.meta?.versionId}"` },
         },
         {

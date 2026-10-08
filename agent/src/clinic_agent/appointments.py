@@ -13,7 +13,10 @@ from typing import ClassVar
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.booking import VISIT_TYPES, Booking, Exits, spoken_appointment, spoken_time
-from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot
+from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutcome
+from clinic_agent.escalation import handoff
+from clinic_agent.holding import with_holding_line
+from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
 
@@ -23,12 +26,6 @@ CHANGE_REJECTED = {
     "appointment_cancelled": f"I'm sorry, that appointment has already been cancelled. {ANYTHING_ELSE}",
     "appointment_not_found": f"I'm sorry, I can't find that appointment any more. {ANYTHING_ELSE}",
 }
-
-# TODO(#10): retry a failed change once with the same key, reconcile an unknown one, and file the Callback Request.
-CHANGE_FAILED = (
-    "I'm sorry, I wasn't able to finish changing that appointment. "
-    "A member of our staff will call you back to help. Goodbye."
-)
 
 CHOOSE_APPOINTMENT_TASK = """\
 Tell the caller the upcoming appointments list_appointments just returned, each with the Provider,
@@ -92,7 +89,7 @@ class _Appointments:
             description="Look up the caller's upcoming appointments, to tell them or to reschedule or cancel one.",
             properties={},
             required=[],
-            handler=list_appointments,
+            handler=with_holding_line(list_appointments),
             cancel_on_interruption=True,
             timeout_secs=8,
         )
@@ -135,28 +132,38 @@ class _Appointments:
         idempotency_key = str(uuid.uuid4())
 
         async def cancel_appointment(args: dict, flow_manager: FlowManager):
-            written = await self.ehr.cancel(
-                patient_id=flow_manager.state["patient_id"],
-                appointment_id=appointment.appointment_id,
-                idempotency_key=idempotency_key,
-            )
+            patient_id = flow_manager.state["patient_id"]
+
+            async def cancel() -> WriteOutcome:
+                return await self.ehr.cancel(
+                    patient_id=patient_id, appointment_id=appointment.appointment_id, idempotency_key=idempotency_key
+                )
+
+            async def is_cancelled() -> bool:
+                listed = await self.ehr.appointments(patient_id)
+                if any(a.appointment_id == appointment.appointment_id for a in listed):
+                    return False
+                return await self.ehr.slot_is_free(appointment.slot_id)
+
+            written = await write_until_settled(cancel, is_cancelled)
             if written.outcome == "succeeded":
                 cancelled = f"Your {_details(appointment)} is cancelled. {ANYTHING_ELSE}"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(cancelled)
             if written.outcome == "rejected":
                 result = {"outcome": "rejected", "reason": written.reason}
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
-            return {"outcome": written.outcome}, self.exits.handoff(CHANGE_FAILED)
+            reason = unsettled(written, verb="cancel", done="cancelled", details=_details(appointment))
+            return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(
             name="cancel_appointment",
             description="Cancel exactly the appointment you read back. Call only after the caller clearly says yes to it.",
             properties={},
             required=[],
-            handler=cancel_appointment,
+            handler=with_holding_line(cancel_appointment),
             # A write must not be dropped halfway because the Caller spoke.
             cancel_on_interruption=False,
-            timeout_secs=10,
+            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
         )
 
     def choose_appointment_node(self) -> NodeConfig:
@@ -200,12 +207,19 @@ class _Rescheduling(Booking):
         idempotency_key = str(uuid.uuid4())
 
         async def reschedule_appointment(args: dict, flow_manager: FlowManager):
-            written = await self.ehr.reschedule(
-                patient_id=flow_manager.state["patient_id"],
-                appointment_id=self.appointment.appointment_id,
-                slot_id=slot.slot_id,
-                idempotency_key=idempotency_key,
-            )
+            patient_id = flow_manager.state["patient_id"]
+            appointment_id = self.appointment.appointment_id
+
+            async def reschedule() -> WriteOutcome:
+                return await self.ehr.reschedule(
+                    patient_id=patient_id, appointment_id=appointment_id, slot_id=slot.slot_id, idempotency_key=idempotency_key
+                )
+
+            async def is_moved() -> bool:
+                listed = await self.ehr.appointments(patient_id)
+                return any(a.appointment_id == appointment_id and a.slot_id == slot.slot_id for a in listed)
+
+            written = await write_until_settled(reschedule, is_moved)
             if written.outcome == "succeeded":
                 moved = (
                     f"Done. Your {VISIT_TYPES[self.appointment.visit_type]} is now on {spoken_time(slot.start)} "
@@ -217,17 +231,19 @@ class _Rescheduling(Booking):
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
-            return {"outcome": written.outcome}, self.exits.handoff(CHANGE_FAILED)
+            details = f"{_details(self.appointment)}, to {spoken_time(slot.start)} with {slot.provider_name}"
+            reason = unsettled(written, verb="move", done="moved", details=details)
+            return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(
             name="reschedule_appointment",
             description="Move the appointment exactly as you read back. Call only after the caller clearly says yes to it.",
             properties={},
             required=[],
-            handler=reschedule_appointment,
+            handler=with_holding_line(reschedule_appointment),
             # A write must not be dropped halfway because the Caller spoke.
             cancel_on_interruption=False,
-            timeout_secs=10,
+            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
         )
 
     def reschedule_read_back_node(self, slot: Slot) -> NodeConfig:

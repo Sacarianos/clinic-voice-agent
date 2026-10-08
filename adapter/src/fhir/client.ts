@@ -1,6 +1,7 @@
 // The only code in the system that speaks FHIR over HTTP. Everything above it works in domain shapes.
 
 import type { Bundle, FhirResource } from "fhir/r4";
+import type { Fetch } from "../faults.ts";
 
 // The EHR didn't give a usable answer: unreachable, or an error status. Routes turn it into ehr_unavailable.
 // Messages name the resource type only. Search parameters carry names and dates of birth.
@@ -37,38 +38,42 @@ export type TransactionResult =
 // fetch() failed before any of the request reached the EHR.
 const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"]);
 
-export function createFhirClient(options: { baseUrl: string }): FhirClient {
-  async function request(method: string, url: string, what: string): Promise<Response> {
+export function createFhirClient(options: { baseUrl: string; timeoutMs: number; fetch?: Fetch }): FhirClient {
+  const fetch = options.fetch ?? globalThis.fetch;
+  // Every request, body included, must finish within the timeout. A slow EHR then fails or turns a
+  // write unknown instead of holding the Caller on the line.
+  const send = (method: string, url: string, body?: unknown) =>
+    fetch(url, {
+      method,
+      headers: { accept: "application/fhir+json", ...(body === undefined ? {} : { "content-type": "application/fhir+json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(options.timeoutMs),
+    });
+
+  async function request(method: string, url: string, what: string, body?: unknown): Promise<Response> {
     try {
-      return await fetch(url, { method, headers: { accept: "application/fhir+json" } });
+      return await send(method, url, body);
     } catch (error) {
-      throw new EhrUnavailableError(`${method} ${what} failed: ${(error as Error).cause ?? error}`);
+      throw new EhrUnavailableError(`${method} ${what} failed: ${describe(error)}`);
+    }
+  }
+
+  async function json<T>(response: Response, what: string): Promise<T> {
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      throw new EhrUnavailableError(`${what} answer unreadable: ${describe(error)}`);
     }
   }
 
   async function getBundle(url: string, resourceType: string): Promise<Bundle> {
     const response = await request("GET", url, resourceType);
     if (!response.ok) throw new EhrUnavailableError(`GET ${resourceType} returned ${response.status}`);
-    return (await response.json()) as Bundle;
+    return json<Bundle>(response, `GET ${resourceType}`);
   }
 
   const searchUrl = (resourceType: string, params: SearchParams) =>
     `${options.baseUrl}/${resourceType}?${new URLSearchParams(params)}`;
-
-  async function create<T extends FhirResource>(resource: T): Promise<T & { id: string }> {
-    let response: Response;
-    try {
-      response = await fetch(`${options.baseUrl}/${resource.resourceType}`, {
-        method: "POST",
-        headers: { accept: "application/fhir+json", "content-type": "application/fhir+json" },
-        body: JSON.stringify(resource),
-      });
-    } catch (error) {
-      throw new EhrUnavailableError(`POST ${resource.resourceType} failed: ${(error as Error).cause ?? error}`);
-    }
-    if (!response.ok) throw new EhrUnavailableError(`POST ${resource.resourceType} returned ${response.status}`);
-    return (await response.json()) as T & { id: string };
-  }
 
   return {
     async search(resourceType, params) {
@@ -89,17 +94,13 @@ export function createFhirClient(options: { baseUrl: string }): FhirClient {
       const response = await request("GET", `${options.baseUrl}/${resourceType}/${encodeURIComponent(id)}`, resourceType);
       if (response.status === 404 || response.status === 410) return undefined;
       if (!response.ok) throw new EhrUnavailableError(`GET ${resourceType} returned ${response.status}`);
-      return (await response.json()) as never;
+      return json(response, `GET ${resourceType}`);
     },
 
     async transaction(bundle) {
       let response: Response;
       try {
-        response = await fetch(options.baseUrl, {
-          method: "POST",
-          headers: { accept: "application/fhir+json", "content-type": "application/fhir+json" },
-          body: JSON.stringify(bundle),
-        });
+        response = await send("POST", options.baseUrl, bundle);
       } catch (error) {
         const code = ((error as Error).cause as { code?: string } | undefined)?.code;
         return { status: code && NOT_SENT.has(code) ? "failed" : "unknown" };
@@ -115,6 +116,12 @@ export function createFhirClient(options: { baseUrl: string }): FhirClient {
       }
     },
 
-    create,
+    async create(resource) {
+      const response = await request("POST", `${options.baseUrl}/${resource.resourceType}`, resource.resourceType, resource);
+      if (!response.ok) throw new EhrUnavailableError(`POST ${resource.resourceType} returned ${response.status}`);
+      return json(response, `POST ${resource.resourceType}`);
+    },
   };
 }
+
+const describe = (error: unknown) => (error as Error).cause ?? (error as Error).name ?? error;
