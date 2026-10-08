@@ -3,6 +3,7 @@
 import re
 
 import pytest
+from fakes import CallTool
 from scripts import handoff, spoken, verify
 
 from clinic_agent.escalation import COULD_NOT_FILE_CALLBACK_REQUEST
@@ -60,6 +61,28 @@ async def test_a_clinical_question_from_a_verified_patient_hands_off_with_the_pa
         assert call.ended
 
 
+# The handoff tool takes no patient. The flow links the one it verified, whatever the LLM passes.
+@pytest.mark.scripted_only
+@pytest.mark.parametrize("reason", ["asked_for_person", "proxy_caller", "new_patient", "clinical_question"])
+async def test_every_handoff_after_verification_links_the_verified_patient(ehr, start_call, reason):
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    someone_else = ehr.create_patient(given="Beatrix", family="Lindqvist", birth_date=ehr.unused_birth_date())
+
+    async with start_call(
+        [
+            verify("Rosalind", "Okonkwo", born),
+            "Thank you, Rosalind. How can I help?",
+            CallTool("handoff", {"reason": reason, "patient_id": someone_else}),
+        ]
+    ) as call:
+        await call.converse([f"Rosalind Okonkwo, {spoken(born)}.", "I need someone to call me back."])
+
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert filed.patient_id == patient_id
+        assert call.ended
+
+
 @pytest.mark.scripted_only
 async def test_a_handoff_that_could_not_be_filed_never_promises_a_callback(start_call):
     nothing_listens_here = "http://127.0.0.1:9"
@@ -102,7 +125,7 @@ async def test_a_patient_who_turns_out_to_be_calling_for_someone_else_is_handed_
     ehr, start_call
 ):
     born = ehr.unused_birth_date()
-    ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
 
     async with start_call(
         [
@@ -122,6 +145,7 @@ async def test_a_patient_who_turns_out_to_be_calling_for_someone_else_is_handed_
 
         [filed] = ehr.callback_requests_from(call.caller_phone)
         assert "on behalf of someone else" in filed.reason.lower()
+        assert filed.patient_id == patient_id
         assert not call.tool_results("book_appointment")
         assert call.ended
         assert call.state == "handoff"
