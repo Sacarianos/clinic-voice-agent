@@ -70,5 +70,22 @@ services:
       retries: 300
     restart: "no"
 
+  # The only service that talks to FHIR. The agent calls it at http://localhost:${ADAPTER_PORT:-3000}.
+  adapter:
+    build: ../adapter
+    depends_on:
+      hapi:
+        condition: service_healthy
+    ports:
+      - "${ADAPTER_PORT:-3000}:3000"
+    environment:
+      FHIR_BASE_URL: http://hapi:8080/fhir
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+
 volumes:
   hapi-data:
