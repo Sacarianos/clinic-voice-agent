@@ -1,4 +1,9 @@
-"""Voice server: the Twilio webhook and the media stream WebSocket."""
+"""Voice server: browser calls over WebRTC, and phone calls through Twilio when it is set up.
+
+A browser call opens Pipecat's prebuilt page at `/`, which talks to the server over WebRTC. A phone call
+comes in through the Twilio webhook and its media stream WebSocket. Both run the same pipeline and the
+same conversation; only the transport at each end differs.
+"""
 
 import asyncio
 import base64
@@ -6,13 +11,15 @@ import hashlib
 import hmac
 import os
 import sys
+import uuid
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from xml.sax.saxutils import quoteattr
 
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.observers.user_bot_latency_observer import UserBotLatencyObserver
@@ -20,8 +27,17 @@ from pipecat.pipeline.worker import PipelineParams
 from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregatorParams
 from pipecat.runner.utils import parse_telephony_websocket
 from pipecat.serializers.twilio import TwilioFrameSerializer
+from pipecat.transports.base_transport import BaseTransport, TransportParams
+from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+from pipecat.transports.smallwebrtc.request_handler import (
+    SmallWebRTCPatchRequest,
+    SmallWebRTCRequest,
+    SmallWebRTCRequestHandler,
+)
+from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
 from pipecat.workers.runner import WorkerRunner
+from pipecat_ai_prebuilt.frontend import PipecatPrebuiltUI
 
 from clinic_agent.config import ConfigError, require
 from clinic_agent.conversation import start_conversation
@@ -32,6 +48,9 @@ from clinic_agent.tracing import configure_tracing
 
 # Twilio Media Streams carry 8 kHz mu-law. The serializer converts to and from PCM at this rate.
 PHONE_SAMPLE_RATE = 8000
+# The WebRTC transport resamples the browser's 48 kHz Opus. Silero VAD takes 16 kHz; Aura-2 speaks 24 kHz.
+BROWSER_IN_SAMPLE_RATE = 16000
+BROWSER_OUT_SAMPLE_RATE = 24000
 DEFAULT_PORT = 8765
 
 
@@ -50,23 +69,72 @@ def create_app(
     hang_up_through_twilio: bool = True,
     tracing: bool = False,
 ) -> FastAPI:
-    """Phone calls come in only when there is a Twilio account to check their webhooks and hang them up."""
-    app = FastAPI()
+    """Browser calls are always on. Phone calls come in only with a Twilio account to check their webhooks and hang them up."""
+    webrtc = SmallWebRTCRequestHandler()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        await webrtc.close()
+
+    app = FastAPI(lifespan=lifespan)
     # Tests wait for this to drop back to 0 after hanging up, so they don't tear a call down mid-cleanup.
     app.state.calls_in_progress = 0
+
+    async def run_call(transport: BaseTransport, params: PipelineParams, conversation_id: str, caller_phone: str | None):
+        app.state.calls_in_progress += 1
+        try:
+            await _run_call(make_services(), transport, params, conversation_id, caller_phone, tracing=tracing)
+        finally:
+            app.state.calls_in_progress -= 1
+
+    _add_browser_routes(app, webrtc, run_call)
     if twilio:
-        _add_phone_routes(app, make_services, twilio, hang_up_through_twilio=hang_up_through_twilio, tracing=tracing)
+        _add_phone_routes(app, twilio, run_call, hang_up_through_twilio=hang_up_through_twilio)
     return app
 
 
-def _add_phone_routes(
-    app: FastAPI,
-    make_services: Callable[[], VoiceServices],
-    twilio: TwilioAccount,
-    *,
-    hang_up_through_twilio: bool,
-    tracing: bool,
-) -> None:
+def _add_browser_routes(app: FastAPI, webrtc: SmallWebRTCRequestHandler, run_call) -> None:
+    """The routes Pipecat's prebuilt page uses: the page itself, a session to start, and the WebRTC offer."""
+    app.mount("/client", PipecatPrebuiltUI)
+    calls: set[asyncio.Task] = set()
+
+    @app.get("/", include_in_schema=False)
+    async def page() -> RedirectResponse:
+        return RedirectResponse(url="/client/")
+
+    @app.post("/start")
+    async def start() -> dict:
+        # No ICE servers: the browser and the server are on the same machine, so host candidates connect them.
+        return {"sessionId": str(uuid.uuid4())}
+
+    @app.post("/sessions/{session_id}/api/offer")
+    async def offer(session_id: uuid.UUID, request: SmallWebRTCRequest) -> dict:
+        async def call_in_background(connection: SmallWebRTCConnection) -> None:
+            transport = SmallWebRTCTransport(
+                webrtc_connection=connection,
+                params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
+            )
+            params = PipelineParams(
+                audio_in_sample_rate=BROWSER_IN_SAMPLE_RATE,
+                audio_out_sample_rate=BROWSER_OUT_SAMPLE_RATE,
+                enable_metrics=True,
+                enable_usage_metrics=True,
+            )
+            # A browser has no caller ID, so a Callback Request asks the Caller for a number.
+            task = asyncio.create_task(run_call(transport, params, str(session_id), None))
+            calls.add(task)
+            task.add_done_callback(calls.discard)
+
+        return await webrtc.handle_web_request(request, call_in_background)
+
+    @app.patch("/sessions/{session_id}/api/offer")
+    async def ice_candidates(session_id: uuid.UUID, request: SmallWebRTCPatchRequest) -> dict:
+        await webrtc.handle_patch_request(request)
+        return {"status": "success"}
+
+
+def _add_phone_routes(app: FastAPI, twilio: TwilioAccount, run_call, *, hang_up_through_twilio: bool) -> None:
     @app.post("/voice")
     async def voice(request: Request) -> Response:
         form = await request.form()
@@ -90,13 +158,6 @@ def _add_phone_routes(
 
     @app.websocket("/ws")
     async def media_stream(websocket: WebSocket) -> None:
-        app.state.calls_in_progress += 1
-        try:
-            await run_call(websocket)
-        finally:
-            app.state.calls_in_progress -= 1
-
-    async def run_call(websocket: WebSocket) -> None:
         await websocket.accept()
         _, call_data = await parse_telephony_websocket(websocket)
         serializer = TwilioFrameSerializer(
@@ -115,44 +176,56 @@ def _add_phone_routes(
                 serializer=serializer,
             ),
         )
-        services = make_services()
-        call = build_call(
-            llm=services.llm,
-            hear=[transport.input(), services.stt],
-            speak=[services.tts, transport.output()],
-            user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
-            params=PipelineParams(
-                audio_in_sample_rate=PHONE_SAMPLE_RATE,
-                audio_out_sample_rate=PHONE_SAMPLE_RATE,
-                enable_metrics=True,  # STT, LLM and TTS time to first byte on each span
-                enable_usage_metrics=True,
-            ),
-            enable_tracing=tracing,
-            enable_turn_tracking=True,
-            conversation_id=call_data.call_id,
-            additional_span_attributes={"langfuse.session.id": call_data.call_id},
-            observers=[_latency_log()],
+        params = PipelineParams(
+            audio_in_sample_rate=PHONE_SAMPLE_RATE,
+            audio_out_sample_rate=PHONE_SAMPLE_RATE,
+            enable_metrics=True,  # STT, LLM and TTS time to first byte on each span
+            enable_usage_metrics=True,
         )
+        await run_call(transport, params, call_data.call_id, call_data.from_number or None)
 
-        starting: list[asyncio.Task] = []
 
-        @transport.event_handler("on_client_connected")
-        async def on_client_connected(transport, client):
-            starting.append(asyncio.current_task())
-            await start_conversation(call, services.ehr, call_data.from_number or None)
+async def _run_call(
+    services: VoiceServices,
+    transport: BaseTransport,
+    params: PipelineParams,
+    conversation_id: str,
+    caller_phone: str | None,
+    *,
+    tracing: bool,
+) -> None:
+    """One call, from the Caller connecting to hanging up. Traced as one conversation keyed by conversation_id."""
+    call = build_call(
+        llm=services.llm,
+        hear=[transport.input(), services.stt],
+        speak=[services.tts, transport.output()],
+        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+        params=params,
+        enable_tracing=tracing,
+        enable_turn_tracking=True,
+        conversation_id=conversation_id,
+        additional_span_attributes={"langfuse.session.id": conversation_id},
+        observers=[_latency_log()],
+    )
 
-        @transport.event_handler("on_client_disconnected")
-        async def on_client_disconnected(transport, client):
-            # Starting the conversation waits until the greeting has been spoken. If the Caller hangs up
-            # first, it never is, and the transport would wait for that start forever before shutting down.
-            for task in starting:
-                task.cancel()
-            await call.worker.cancel()
+    starting: list[asyncio.Task] = []
 
-        runner = WorkerRunner(handle_sigint=False)  # uvicorn owns the signals
-        await runner.add_workers(call.worker)
-        await runner.run()
+    @transport.event_handler("on_client_connected")
+    async def on_client_connected(transport, client):
+        starting.append(asyncio.current_task())
+        await start_conversation(call, services.ehr, caller_phone)
 
+    @transport.event_handler("on_client_disconnected")
+    async def on_client_disconnected(transport, client):
+        # Starting the conversation waits until the greeting has been spoken. If the Caller hangs up
+        # first, it never is, and the transport would wait for that start forever before shutting down.
+        for task in starting:
+            task.cancel()
+        await call.worker.cancel()
+
+    runner = WorkerRunner(handle_sigint=False)  # uvicorn owns the signals
+    await runner.add_workers(call.worker)
+    await runner.run()
 
 
 def _latency_log() -> UserBotLatencyObserver:
@@ -205,5 +278,7 @@ def main() -> None:
         app = app_from_env(env)
     except ConfigError as error:
         sys.exit(f"clinic-voice-server: {error}")
+    port = int(env.get("PORT", DEFAULT_PORT))
+    logger.info(f"Open http://localhost:{port} in a browser to talk to the agent")
     # Without uvicorn's own log config its loggers reach the masked setup above, like everything else.
-    uvicorn.run(app, host="127.0.0.1", port=int(env.get("PORT", DEFAULT_PORT)), log_config=None)
+    uvicorn.run(app, host="127.0.0.1", port=port, log_config=None)

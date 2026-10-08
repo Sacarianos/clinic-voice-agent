@@ -3,8 +3,7 @@
 import random
 
 import pytest
-from fakes import CallTool
-from scripts import emergency_redirect, handoff
+from scripts import confirm_number, emergency_redirect, give_number, handoff
 
 from clinic_agent.escalation import ASK_FOR_CALLBACK_NUMBER, EMERGENCY_REDIRECT
 
@@ -13,14 +12,6 @@ def _unused_phone() -> tuple[str, str]:
     """A number as the Caller says it, and as the Callback Request holds it."""
     digits = f"555{random.randrange(10**7):07d}"
     return f"{digits[:3]} {digits[3:6]} {digits[6:]}", f"+1{digits}"
-
-
-def give_number(digits: str) -> CallTool:
-    return CallTool("record_callback_number", {"phone_number": digits})
-
-
-def confirm_number(correct: bool) -> CallTool:
-    return CallTool("confirm_callback_number", {"correct": correct})
 
 
 async def test_a_handoff_without_caller_id_files_the_number_the_caller_gives_once_they_confirm_it(ehr, start_call):

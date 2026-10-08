@@ -31,6 +31,16 @@ def emergency_redirect() -> CallTool:
     return CallTool("emergency_redirect")
 
 
+def give_number(digits: str) -> CallTool:
+    """The LLM records the callback number the Caller said, on a call without caller ID."""
+    return CallTool("record_callback_number", {"phone_number": digits})
+
+
+def confirm_number(correct: bool) -> CallTool:
+    """The LLM records whether the Caller said the number read back to them is right."""
+    return CallTool("confirm_callback_number", {"correct": correct})
+
+
 def answer_read_back(answer: str) -> CallTool:
     """The LLM records what the Caller said to a Read-back: yes, no or change."""
     return CallTool("record_read_back_answer", {"answer": answer})
