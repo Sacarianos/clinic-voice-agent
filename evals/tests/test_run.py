@@ -20,7 +20,12 @@ def spoken(iso_date: str) -> str:
 
 def verify(scenario: Scenario, seeded: Seeded) -> CallTool:
     patient = scenario.patient
-    args = {"given_name": patient.given, "family_name": patient.family, "date_of_birth": seeded.birth_date}
+    args = {
+        "given_name": patient.given,
+        "family_name": patient.family,
+        "date_of_birth": seeded.birth_date,
+        "caller_is_the_patient": True,
+    }
     return CallTool("verify_patient", args)
 
 
