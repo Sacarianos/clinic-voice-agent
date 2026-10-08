@@ -28,8 +28,8 @@ HAPI's logs are the EHR's own and sit inside the system of record. Everything el
 
 `agent/src/clinic_agent/phi.py` holds one process-wide mask, `PHI`. Logs and trace exports pass everything they write through it. It masks in four ways:
 
-1. **Everything the Caller says before Identity Verification succeeds is masked whole**, as `[UNVERIFIED CALLER]`. Before verification there is no telling which words are a name, so each utterance is learned as a phrase and masked wherever it shows up later: in the LLM context, in an STT span, in a tool call. The `PhiRedactionProcessor` sits in the pipeline right after the Caller is heard and teaches the mask each transcript before the LLM sees it. It leaves the frames themselves alone, because the LLM needs the real name and date of birth to verify the Caller.
-2. **Values under keys that hold patient data are masked**, as `[NAME]`, `[DOB]` or `[PHONE]`: `given_name`, `family_name`, `date_of_birth`, `birthDate`, `given`, `family`, `telecom`, `phoneNumber`, `caller_phone`, `from_number`, `From` and the like. This works on key-value text, on JSON and on FHIR-shaped data. Each value is learned too, so a name the agent or the Caller repeats later in free text is masked as well. The Caller's phone number is learned when the call starts.
+1. **Everything the Caller says before Identity Verification succeeds is masked whole**, as `[UNVERIFIED CALLER]`. Before verification there is no telling which words are a name, so each utterance is learned as a phrase and masked wherever it shows up later: in the LLM context, in an STT span, in a tool call. The `PhiRedactionProcessor` sits in the pipeline right after the Caller is heard and teaches the mask each transcript before the LLM sees it. A line typed into the browser page's message box reaches the LLM as a user message instead of a transcript, and is learned the same way. It leaves the frames themselves alone, because the LLM needs the real name and date of birth to verify the Caller.
+2. **Values under keys that hold patient data are masked**, as `[NAME]`, `[DOB]` or `[PHONE]`: `given_name`, `family_name`, `date_of_birth`, `birthDate`, `given`, `family`, `telecom`, `phoneNumber`, `caller_phone`, `from_number`, `From` and the like. This works on key-value text, on JSON and on FHIR-shaped data. Each value is learned too, so a name the agent or the Caller repeats later in free text is masked as well. The Caller's phone number is learned when the call starts, or, on a call without caller ID, when the Caller gives one. A call without caller ID has no phone number at all until then, so no placeholder is ever learned as one.
 3. **Dates with a year before the current one are masked** as `[DOB]`, in ISO, numeric, written and spoken forms. Every Patient is an adult and no appointment is in a past year, so scheduling dates stay readable in traces.
 4. **Phone numbers are masked by their shape**: E.164 (URL-encoded too), US formats, and seven or more digits said as words.
 
@@ -66,6 +66,8 @@ What stays readable: Provider names, appointment days and times, Visit Types, pa
 It never holds names, dates of birth, phone numbers, reasons in words, or anything said on the call. The agent only appends to it. A real deployment would ship it to write-once storage and keep it at least six years, the period HIPAA sets for keeping required documentation.
 
 ## Vendors
+
+A browser call's audio, and the live transcript the page shows, pass only between the browser and the server on the same machine.
 
 These services receive call data unmasked, because they do the work:
 
