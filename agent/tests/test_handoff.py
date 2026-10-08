@@ -99,16 +99,17 @@ async def test_a_proxy_caller_who_gives_someone_elses_details_is_handed_off_with
     born = ehr.unused_birth_date()
     ehr.create_patient(given="Beatrix", family="Lindqvist", birth_date=born)
 
+    # The Caller only says who the details belong to as they give them. Said first, a real LLM hands off at once.
     async with start_call(
         [
-            "I'd be happy to help. Can I get your mother's full name and date of birth?",
+            "I'd be happy to help. Can I get your full name and date of birth?",
             verify("Beatrix", "Lindqvist", born, caller_is_the_patient=False),
         ]
     ) as call:
         await call.converse(
             [
-                "Hi, I'm calling to book a checkup for my mother.",
-                f"Her name is Beatrix Lindqvist, born {spoken(born)}.",
+                "Hi, I'd like to book a checkup.",
+                f"It's for my mother, actually. Her name is Beatrix Lindqvist, born {spoken(born)}.",
             ]
         )
 
