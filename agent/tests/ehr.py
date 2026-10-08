@@ -15,6 +15,7 @@ import httpx
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 PROVIDER_SYSTEM = "https://clinic.example/fhir/identifier/provider"
+VISIT_TYPE_SYSTEM = "https://clinic.example/fhir/CodeSystem/visit-type"
 
 
 def clinic_time(days: int, at: str) -> datetime:
@@ -138,6 +139,30 @@ class Ehr:
         response = self._fhir.get(f"Slot/{slot_id}")
         response.raise_for_status()
         self._fhir.put(f"Slot/{slot_id}", json={**response.json(), "status": "busy"}).raise_for_status()
+
+    def create_appointment(self, patient_id: str, provider: Provider, start: datetime, visit_type: str) -> str:
+        """A booked Appointment in a busy Slot of its own, as if the Patient booked it on an earlier call."""
+        slot_id = self.create_slot(provider, start, status="busy")
+        response = self._fhir.post(
+            "Appointment",
+            json={
+                "resourceType": "Appointment",
+                "status": "booked",
+                "appointmentType": {"coding": [{"system": VISIT_TYPE_SYSTEM, "code": visit_type}]},
+                "slot": [{"reference": f"Slot/{slot_id}"}],
+                "start": start.isoformat(),
+                "end": (start + timedelta(minutes=30)).isoformat(),
+                "participant": [{"actor": {"reference": f"Patient/{patient_id}"}, "status": "accepted"}],
+            },
+        )
+        response.raise_for_status()
+        # Not on the created list: delete_created_records finds it through its Patient.
+        return response.json()["id"]
+
+    def appointment(self, appointment_id: str) -> dict:
+        response = self._fhir.get(f"Appointment/{appointment_id}")
+        response.raise_for_status()
+        return response.json()
 
     def appointments_of(self, patient_id: str) -> list[dict]:
         return self._search("Appointment", {"patient": f"Patient/{patient_id}"})

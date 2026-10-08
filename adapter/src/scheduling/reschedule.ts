@@ -1,0 +1,86 @@
+import type { Appointment, Bundle, Slot } from "fhir/r4";
+import type { FhirClient } from "../fhir/client.ts";
+import { versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
+import {
+  appointmentDetails,
+  readPatientsAppointment,
+  slotIdOf,
+  slotToTake,
+  type AppointmentDetails,
+  type SlotRejection,
+} from "./appointments.ts";
+import { loadProviders } from "./providers.ts";
+
+export type RescheduleRequest = {
+  patientId: string;
+  appointmentId: string;
+  slotId: string;
+  // Chosen by the agent once per Read-back. Retries are recognised by the target state instead: an
+  // Appointment that already holds the new Slot is a success.
+  idempotencyKey: string;
+};
+
+export type RescheduleRejection =
+  | SlotRejection
+  | "appointment_not_found"
+  | "appointment_cancelled"
+  | "appointment_in_past";
+
+export type RescheduleResult = WriteOutcome<{ appointment: AppointmentDetails }, RescheduleRejection>;
+
+// Moves the Appointment to the new Slot, frees the old Slot and takes the new one in one FHIR
+// transaction. Every entry is guarded by the version read here, so a Book or another Reschedule that
+// takes the new Slot first makes this one conflict instead of double-booking it.
+export function reschedule(fhir: FhirClient, request: RescheduleRequest, now: Date): Promise<RescheduleResult> {
+  return versionGuardedWrite<RescheduleResult>(async () => {
+    const appointment = await readPatientsAppointment(fhir, request.patientId, request.appointmentId);
+    if (!appointment) return { outcome: "rejected", reason: "appointment_not_found" };
+    const providers = await loadProviders(fhir);
+    const oldSlot = await fhir.read<Slot>("Slot", slotIdOf(appointment));
+    if (!oldSlot) throw new Error(`Appointment ${appointment.id} has no Slot`);
+
+    if (appointment.status === "booked" && oldSlot.id === request.slotId) {
+      return { outcome: "succeeded", appointment: appointmentDetails(appointment, oldSlot, providers) };
+    }
+    if (appointment.status === "cancelled") return { outcome: "rejected", reason: "appointment_cancelled" };
+    if (new Date(appointment.start!) < now) return { outcome: "rejected", reason: "appointment_in_past" };
+    const taking = await slotToTake(fhir, request.slotId, providers, now);
+    if ("rejection" in taking) return { outcome: "rejected", reason: taking.rejection };
+    const { slot: newSlot, provider } = taking;
+
+    const moved: Appointment = {
+      ...appointment,
+      slot: [{ reference: `Slot/${newSlot.id}` }],
+      start: newSlot.start,
+      end: newSlot.end,
+      participant: [
+        ...appointment.participant.filter((participant) => !participant.actor?.reference?.startsWith("Practitioner/")),
+        { actor: { reference: `Practitioner/${provider.practitionerId}` }, status: "accepted" },
+      ],
+    };
+    const transaction: Bundle<Slot | Appointment> = {
+      resourceType: "Bundle",
+      type: "transaction",
+      entry: [
+        {
+          resource: moved,
+          request: { method: "PUT", url: `Appointment/${appointment.id}`, ifMatch: `W/"${appointment.meta?.versionId}"` },
+        },
+        {
+          resource: { ...oldSlot, status: "free" },
+          request: { method: "PUT", url: `Slot/${oldSlot.id}`, ifMatch: `W/"${oldSlot.meta?.versionId}"` },
+        },
+        {
+          resource: { ...newSlot, status: "busy" },
+          request: { method: "PUT", url: `Slot/${newSlot.id}`, ifMatch: `W/"${newSlot.meta?.versionId}"` },
+        },
+      ],
+    };
+    const result = await fhir.transaction(transaction);
+    if (result.status === "committed") {
+      return { outcome: "succeeded", appointment: appointmentDetails(moved, newSlot, providers) };
+    }
+    if (result.status === "conflict") return "conflict";
+    return { outcome: result.status };
+  });
+}

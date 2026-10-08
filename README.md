@@ -47,10 +47,24 @@ It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "s
 
 `visitType` is `annual_physical`, `sick_visit` or `follow_up`. Book creates the Appointment and marks the Slot busy in one FHIR transaction, guarded by the Slot's version, so two Callers booking the same Slot at once get one Appointment between them. The key is stored on the Appointment. A retry with the same key returns the original Appointment and writes nothing new.
 
+`GET /appointments?patientId=...` lists the Patient's upcoming appointments, earliest first, as `{ "appointments": [{ "appointmentId", "patientId", "slotId", "providerId", "providerName", "start", "end", "visitType" }] }`. Cancelled appointments and ones that already started are left out.
+
+`POST /appointments/<appointmentId>/reschedule` moves an appointment to a new Slot:
+
+```
+{ "patientId": "...", "slotId": "...", "idempotencyKey": "<uuid>" }
+```
+
+It changes the same Appointment, frees the old Slot and takes the new one in one FHIR transaction. Every entry is guarded by the version the adapter read, so a Book that takes the new Slot first leaves the Reschedule rejected as `slot_taken` and the Slot with one Appointment. It is idempotent by target state: an Appointment that already holds the new Slot answers `succeeded`.
+
+`POST /appointments/<appointmentId>/cancel` with `{ "patientId": "...", "idempotencyKey": "<uuid>" }` cancels the Appointment and frees its Slot in one transaction. Cancelling an appointment that is already cancelled answers `succeeded`.
+
+Both refuse to change an appointment that already started, and only change an appointment of the `patientId` given. A version conflict makes the adapter read the EHR once more and decide again, so a racing retry of the same write still answers `succeeded`.
+
 Every write answers 200 with one of four outcomes, and the agent acts on each differently:
 
 - `{ "outcome": "succeeded", "appointment": { "appointmentId", "patientId", "slotId", "providerId", "providerName", "start", "end", "visitType" } }`: written. Only now may the agent say so.
-- `{ "outcome": "rejected", "reason": "slot_taken" }`: a business rule stopped it and nothing was written. Book's reasons are `slot_taken`, `outside_booking_window` and `slot_not_found`.
+- `{ "outcome": "rejected", "reason": "slot_taken" }`: a business rule stopped it and nothing was written. Book's reasons are `slot_taken`, `outside_booking_window` and `slot_not_found`. Reschedule adds `appointment_not_found`, `appointment_cancelled` and `appointment_in_past`. Cancel's are `appointment_not_found` and `appointment_in_past`.
 - `{ "outcome": "failed" }`: nothing was written, so a retry with the same key is safe.
 - `{ "outcome": "unknown" }`: the request reached HAPI but no answer came back. Read the EHR again before telling the Caller anything.
 
@@ -81,7 +95,11 @@ The voice server lives in `agent/`. Twilio posts each incoming call to `POST /vo
 
 The conversation is a `pipecat.flows` state machine in `agent/src/clinic_agent/conversation.py`. The agent greets the Caller and runs Identity Verification through the adapter before anything else. A name that matches several Patients gets a request to spell the last name. A failed attempt gets the same failure message whatever didn't match, and a second one ends the call with a Handoff message. Once verified, the call moves on to Intent. Each state offers the LLM only its own tools, so nothing past verification can be reached before it (see [ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md)).
 
-Booking lives in `agent/src/clinic_agent/booking.py`. From Intent the agent searches for Slots by Provider, days and part of day, and offers two or three. When the Caller picks one and says what the visit is for, `choose_slot` moves to the Read-back, where the agent itself says the Provider, date, time and Visit Type. Only that state offers `book_appointment`, and it takes no arguments: it books exactly what was read back, under an idempotency key made for that Read-back. Asking for another time during the Read-back goes back to the search without starting over. The agent says the appointment is booked only when the adapter answers `succeeded`. A Slot taken in the meantime gets an apology and new offers. A failed or unknown Book ends the call with a Handoff message for now. The server needs the local EHR stack running and reaches the adapter at `EHR_ADAPTER_URL`, `http://localhost:3000` by default.
+Booking lives in `agent/src/clinic_agent/booking.py`. From Intent the agent searches for Slots by Provider, days and part of day, and offers two or three. When the Caller picks one and says what the visit is for, `choose_slot` moves to the Read-back, where the agent itself says the Provider, date, time and Visit Type. Only that state offers `book_appointment`, and it takes no arguments: it books exactly what was read back, under an idempotency key made for that Read-back. Asking for another time during the Read-back goes back to the search without starting over. The agent says the appointment is booked only when the adapter answers `succeeded`. A Slot taken in the meantime gets an apology and new offers. A failed or unknown Book ends the call with a Handoff message for now.
+
+Rescheduling and cancelling live in `agent/src/clinic_agent/appointments.py`. From Intent, `list_appointments` tells the Caller their upcoming appointments. With more than one, the agent asks which. Choosing one to cancel goes to a Read-back of that appointment, the only state that offers `cancel_appointment`. Choosing one to reschedule goes to the same Slot search as booking, and picking a new time goes to a Read-back of the old and new times, the only state that offers `reschedule_appointment`. Neither write takes arguments, and each runs under a key made for its Read-back. A new time taken in the meantime gets an apology and new offers. A failed or unknown change ends the call with a Handoff message for now.
+
+The server needs the local EHR stack running and reaches the adapter at `EHR_ADAPTER_URL`, `http://localhost:3000` by default.
 
 A Handoff files a Callback Request through the adapter and tells the Caller staff will call back. It fires on a request for a person, a Proxy Caller, a new patient, a clinical question, and a second failed verification. An emergency mention triggers an Emergency Redirect from any state, before or after verification: the agent says to hang up and dial 911, files an emergency Callback Request and ends the call. Both tools are offered in every node as flow-wide functions, as is `get_clinic_info`, which answers Clinic Questions from the static config in `clinic.py`. If a Callback Request can't be saved, the Caller is told so instead of being promised a callback. The number it calls back comes from Twilio's `From`: `/voice` passes it to the media stream as a `from_number` stream parameter. It is never used to verify anyone.
 
