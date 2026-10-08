@@ -50,6 +50,17 @@ async def test_a_browser_caller_hears_the_agent_greet_them_as_soon_as_they_conne
     assert PHI.mask("The write outcome was unknown.") == "The write outcome was unknown."
 
 
+async def test_a_browser_caller_who_hangs_up_while_the_agent_is_talking_ends_the_call_at_once():
+    # A long greeting: the Caller hangs up while it is still playing.
+    tts = RecordingTTS(seconds_per_sentence=5)
+    app = create_app(lambda: VoiceServices(stt=SilentSTT(), llm=ScriptedLLM([]), tts=tts, ehr=UNUSED_EHR))
+    browser = Browser(app)
+
+    await browser.connect()
+    await browser.hear()
+    await browser.hang_up(seconds=2)
+
+
 async def test_a_browser_caller_who_asks_for_a_person_is_called_back_at_the_number_they_give(ehr, ehr_adapter_url):
     digits = f"555{random.randrange(10**7):07d}"
     phone = f"+1{digits}"
