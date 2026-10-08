@@ -8,6 +8,7 @@ import { fhirBaseUrl } from "./ehr.ts";
 
 export type Adapter = {
   url: string;
+  get(path: string, query?: Record<string, string>): Promise<{ status: number; body: any }>;
   post(path: string, body: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }>;
   close(): Promise<void>;
 };
@@ -22,6 +23,10 @@ export async function startAdapter(overrides: Partial<Config> = {}): Promise<Ada
 
   return {
     url,
+    async get(path, query = {}) {
+      const response = await fetch(`${url}${path}?${new URLSearchParams(query)}`);
+      return { status: response.status, body: await response.json() };
+    },
     async post(path, body, headers = {}) {
       const response = await fetch(`${url}${path}`, {
         method: "POST",
