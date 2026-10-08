@@ -1,0 +1,38 @@
+[project]
+name = "clinic-evals"
+version = "0.1.0"
+description = "Eval harness: a simulated Caller talks to the agent through the text transport, and graders score each run."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "anthropic>=1.11.0",
+    "clinic-agent",
+    "httpx>=0.28.1",
+    "pyyaml>=6.0.2",
+]
+
+[project.scripts]
+clinic-evals = "clinic_evals.cli:main"
+
+[tool.uv.sources]
+clinic-agent = { path = "../agent", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+timeout = 120
+# Both come from inside pipecat 1.12, not from our code.
+filterwarnings = [
+    "ignore:'audioop' is deprecated:DeprecationWarning",
+    'ignore:Single-argument \(legacy\) action handlers are deprecated:DeprecationWarning',
+]

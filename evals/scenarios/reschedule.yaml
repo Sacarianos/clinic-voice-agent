@@ -1,0 +1,18 @@
+summary: A Patient moves a follow-up to an afternoon later in the week.
+patient: {given: Desmond, family: Achterberg}
+provider: {given: Imogen, family: Faraday}
+slots:
+  current: {weekday: 1, at: "10:00"}
+  new_morning: {weekday: 3, at: "09:30"}
+  new_afternoon: {weekday: 3, at: "14:00"}
+appointments:
+  existing: {slot: current, visit_type: follow_up}
+caller:
+  goal: Move your follow-up appointment with Dr. Imogen Faraday to {new_morning_day}.
+  twist: >-
+    At first you only say you need to change an appointment, without saying which one or when it
+    is. When you hear the new times, say mornings are hard for you and take the afternoon one.
+expect:
+  appointments:
+    - {slot: new_afternoon, visit_type: follow_up, same_as: existing}
+  handoff: false
