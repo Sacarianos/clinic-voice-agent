@@ -38,16 +38,16 @@ export type TransactionResult =
 // fetch() failed before any of the request reached the EHR.
 const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"]);
 
-export function createFhirClient(options: { baseUrl: string; timeoutMs: number; fetch?: Fetch }): FhirClient {
+// signal() says when to give up on a request, body included. A slow EHR then fails a read or turns a
+// write unknown instead of holding the Caller on the line.
+export function createFhirClient(options: { baseUrl: string; signal: () => AbortSignal; fetch?: Fetch }): FhirClient {
   const fetch = options.fetch ?? globalThis.fetch;
-  // Every request, body included, must finish within the timeout. A slow EHR then fails or turns a
-  // write unknown instead of holding the Caller on the line.
   const send = (method: string, url: string, body?: unknown) =>
     fetch(url, {
       method,
       headers: { accept: "application/fhir+json", ...(body === undefined ? {} : { "content-type": "application/fhir+json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(options.timeoutMs),
+      signal: options.signal(),
     });
 
   async function request(method: string, url: string, what: string, body?: unknown): Promise<Response> {

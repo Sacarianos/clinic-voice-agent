@@ -82,7 +82,7 @@ async def test_a_book_retried_after_a_server_error_has_one_entry_per_attempt_und
     assert first["time"] <= second["time"]
 
 
-async def test_a_book_half_applied_twice_has_both_attempts_and_the_callback_request_it_filed(
+async def test_a_book_half_applied_twice_has_both_attempts_the_slot_release_and_the_callback_request_it_filed(
     ehr, start_call, faulty_adapter, audit_log
 ):
     faulty_adapter.inject("half_write", into=BOOK, times=2)
@@ -94,9 +94,12 @@ async def test_a_book_half_applied_twice_has_both_attempts_and_the_callback_requ
     assert [(e["action"], e["attempt"], e["outcome"], e["reconciled"]) for e in entries] == [
         ("book", 1, "unknown", "failed"),
         ("book", 2, "unknown", "failed"),
+        ("release_slot", 1, "succeeded", None),
         ("callback_request", 1, "succeeded", None),
     ]
-    assert entries[2]["idempotency_key"] is None
+    assert entries[2]["idempotency_key"] == entries[0]["idempotency_key"]
+    assert entries[2]["slot_id"] == slot_id
+    assert entries[3]["idempotency_key"] is None
 
 
 async def test_a_cancel_that_timed_out_has_one_entry_that_says_re_reading_found_it_done(
@@ -173,7 +176,7 @@ async def test_the_audit_log_holds_no_names_dates_of_birth_or_anything_the_calle
         born = call.tool_calls[0].arguments["date_of_birth"]
 
     recorded = [json.dumps(entry) for entry in entries_for(audit_log, patient_id)]
-    assert len(recorded) == 3
+    assert len(recorded) == 4
     text = "\n".join(recorded).casefold()
     for forbidden in ["rosalind", "okonkwo", born, spoken(born).casefold(), call.caller_phone, *map(str.casefold, lines)]:
         assert forbidden not in text

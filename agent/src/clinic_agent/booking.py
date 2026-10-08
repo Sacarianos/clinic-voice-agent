@@ -20,6 +20,7 @@ from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcom
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
+from clinic_agent.timeouts import tool_timeout
 from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
@@ -101,7 +102,7 @@ class Booking:
             required=[],
             handler=with_holding_line(find_slots),
             cancel_on_interruption=True,
-            timeout_secs=8,
+            timeout_secs=tool_timeout(1),
         )
 
     def choose_slot_tool(self) -> FlowsFunctionSchema:
@@ -149,14 +150,17 @@ class Booking:
             async def is_booked() -> bool:
                 return any(a.slot_id == slot.slot_id for a in await self.ehr.appointments(patient_id))
 
+            async def release() -> WriteOutcome:
+                return await self.ehr.release_slot(slot_id=slot.slot_id, idempotency_key=idempotency_key)
+
             write = Write("book", patient_id, idempotency_key, slot_id=slot.slot_id)
-            written = await write_until_settled(self.ehr.audit_log, write, book, is_booked)
+            written = await write_until_settled(self.ehr.audit_log, write, book, is_booked, release)
             if written.outcome == "succeeded":
                 booked = f"You're all booked: {_details(slot, visit_type)}. Is there anything else I can help with?"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
-            reason = unsettled(written, verb="book", done="booked", details=_details(slot, visit_type))
+            reason = unsettled(written, verb="book", done="booked", details=_details(slot, visit_type), slot="the Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(

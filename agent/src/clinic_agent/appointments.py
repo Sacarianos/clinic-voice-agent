@@ -18,6 +18,7 @@ from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutco
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
+from clinic_agent.timeouts import tool_timeout
 from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
@@ -85,7 +86,7 @@ class _Appointments:
             required=[],
             handler=with_holding_line(list_appointments),
             cancel_on_interruption=True,
-            timeout_secs=8,
+            timeout_secs=tool_timeout(1),
         )
 
     def choose_to_cancel_tool(self) -> FlowsFunctionSchema:
@@ -214,8 +215,11 @@ class _Rescheduling(Booking):
                 listed = await self.ehr.appointments(patient_id)
                 return any(a.appointment_id == appointment_id and a.slot_id == slot.slot_id for a in listed)
 
+            async def release() -> WriteOutcome:
+                return await self.ehr.release_slot(slot_id=slot.slot_id, idempotency_key=idempotency_key)
+
             write = Write("reschedule", patient_id, idempotency_key, appointment_id=appointment_id, slot_id=slot.slot_id)
-            written = await write_until_settled(self.ehr.audit_log, write, reschedule, is_moved)
+            written = await write_until_settled(self.ehr.audit_log, write, reschedule, is_moved, release)
             if written.outcome == "succeeded":
                 moved = (
                     f"Done. Your {VISIT_TYPES[self.appointment.visit_type]} is now on {spoken_time(slot.start)} "
@@ -228,7 +232,7 @@ class _Rescheduling(Booking):
             if written.outcome == "rejected":
                 return await self.slot_lost(slot, written.reason, flow_manager)
             details = f"{_details(self.appointment)}, to {spoken_time(slot.start)} with {slot.provider_name}"
-            reason = unsettled(written, verb="move", done="moved", details=details)
+            reason = unsettled(written, verb="move", done="moved", details=details, slot="the new Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
         return FlowsFunctionSchema(

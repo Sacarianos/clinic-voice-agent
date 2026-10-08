@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { SLOW_EHR_DELAY_MS } from "../src/faults.ts";
 import { startAdapter, type Adapter } from "./support/adapter.ts";
 import {
   appointmentsInSlot,
+  appointmentsWithKey,
   clinicTime,
   createPatient,
   createProvider,
@@ -71,7 +73,7 @@ describe("server_error", () => {
 
 describe("timeout", () => {
   test("makes a Book unknown, though the EHR applied it", async () => {
-    const impatient = await startAdapter({ fhirTimeoutMs: 500 });
+    const impatient = await startAdapter({ requestDeadlineMs: 2_000 });
     try {
       const slotId = await createSlot(provider, clinicTime(1, "10:00"));
       const idempotencyKey = randomUUID();
@@ -89,6 +91,41 @@ describe("timeout", () => {
       expect((await readSlot(slotId)).status).toBe("busy");
     } finally {
       await impatient.close();
+    }
+  });
+});
+
+describe("slow", () => {
+  test("makes the EHR answer late, but still within the deadline", async () => {
+    const started = Date.now();
+
+    const response = await adapter.get("/providers", {}, withFault("slow"));
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(SLOW_EHR_DELAY_MS);
+    expect(response.status).toBe(200);
+    expect(response.body.providers.length).toBeGreaterThan(0);
+  });
+});
+
+describe("stalled_write", () => {
+  test("makes a Book unknown, and the Book lands after the adapter answered", async () => {
+    const quick = await startAdapter({ requestDeadlineMs: 2_000 });
+    try {
+      const slotId = await createSlot(provider, clinicTime(1, "10:15"));
+      const idempotencyKey = randomUUID();
+
+      const response = await quick.post(
+        "/appointments",
+        { patientId, slotId, visitType: "sick_visit", idempotencyKey },
+        withFault("stalled_write"),
+      );
+
+      expect(response.body).toEqual({ outcome: "unknown" });
+      expect(await appointmentsInSlot(slotId)).toEqual([]);
+      await expect.poll(() => appointmentsWithKey(idempotencyKey), { timeout: 10_000, interval: 200 }).toHaveLength(1);
+      expect((await readSlot(slotId)).status).toBe("busy");
+    } finally {
+      await quick.close();
     }
   });
 });
