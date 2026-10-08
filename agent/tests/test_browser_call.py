@@ -80,6 +80,23 @@ async def test_a_browser_caller_who_asks_for_a_person_is_called_back_at_the_numb
     assert heard.index(ASK_FOR_CALLBACK_NUMBER) < heard.index(f"I have {digits[:3]}-{digits[3:6]}-{digits[6:]}")
 
 
+async def test_a_line_typed_on_the_page_before_verification_is_masked_whole_like_speech():
+    llm = ScriptedLLM(["Thanks. And your date of birth?"])
+    app = create_app(lambda: VoiceServices(stt=SilentSTT(), llm=llm, tts=RecordingTTS(), ehr=UNUSED_EHR))
+    browser = Browser(app)
+    line = "Hi, this is Philippa Quenneville and I need an appointment."
+
+    try:
+        await browser.connect()
+        await browser.hear()
+        await browser.type(line)
+        await _until(lambda: not llm.steps, "the agent to answer the typed line")
+    finally:
+        await browser.hang_up()
+
+    assert PHI.mask(f"user said: {line}") == "user said: [UNVERIFIED CALLER]"
+
+
 async def test_a_browser_call_is_traced_to_langfuse_as_one_conversation_keyed_by_its_session(langfuse):
     app = create_app(_greeting_only, tracing=True)
     browser = Browser(app)

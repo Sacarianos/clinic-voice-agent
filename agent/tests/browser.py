@@ -6,7 +6,9 @@ track to `/sessions/<id>/api/offer`. The microphone here is silent: tests stand 
 
 import asyncio
 import contextlib
+import json
 import time
+import uuid
 
 import httpx
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
@@ -37,10 +39,12 @@ class Browser:
         self.session_id = started.json()["sessionId"]
         self._peer.addTrack(AudioStreamTrack())
         # The page keeps a data channel open and pings over it, so the server can tell it is still there.
-        channel = self._peer.createDataChannel("chat", ordered=True)
+        self._channel = channel = self._peer.createDataChannel("chat", ordered=True)
+        self._channel_open = asyncio.Event()
 
         @channel.on("open")
         def on_open():
+            self._channel_open.set()
             self._keepalive = asyncio.create_task(self._ping(channel))
 
         await self._peer.setLocalDescription(await self._peer.createOffer())
@@ -51,6 +55,17 @@ class Browser:
         answered.raise_for_status()
         answer = answered.json()
         await self._peer.setRemoteDescription(RTCSessionDescription(sdp=answer["sdp"], type=answer["type"]))
+
+    async def type(self, line: str) -> None:
+        """Sends a line from the page's message box, which reaches the agent as text instead of speech."""
+        message = {
+            "id": uuid.uuid4().hex,
+            "label": "rtvi-ai",
+            "type": "send-text",
+            "data": {"content": line, "options": {"run_immediately": True, "audio_response": True}},
+        }
+        await asyncio.wait_for(self._channel_open.wait(), 10)
+        self._channel.send(json.dumps(message))
 
     async def hear(self, seconds: float = 10) -> None:
         """Waits for the first audio the agent sends."""
