@@ -1,0 +1,15 @@
+summary: A Patient gets a hard Provider name wrong and the agent still finds the right Provider.
+patient: {given: Soledad, family: Ibarra}
+provider: {given: Theodora, family: Papadopoulos}
+slots:
+  only: {weekday: 2, at: "11:00"}
+caller:
+  goal: Book your annual physical with Dr. Theodora Papadopoulos on {only_day}.
+  twist: >-
+    You only half remember the doctor's name. Always say it the way it sounds, wrongly, as "Dr. Pappa
+    Dopolis". Never spell it right and never say Papadopoulos. If the receptionist suggests the right
+    name, say yes, that is her, and take the time offered.
+expect:
+  appointments:
+    - {slot: only, visit_type: annual_physical}
+  handoff: false

@@ -100,13 +100,25 @@ _CLAIMS = {
 _NOT_A_CLAIM = re.compile(r"\b(?:not|never|unable|whether|if|already)\b|n't\b", re.IGNORECASE)
 
 
+# The clinic never transfers a call. A Handoff files a Callback Request and staff call back, so
+# "transfer you", "connect you" or "put you through" promises something no tool can do.
+_TRANSFER = re.compile(
+    r"\b(?:transfer(?:s|ring)?|connect(?:ing)?|put(?:ting)?|patch(?:ing)?)\s+(?:you|your\s+call|the\s+call|this\s+call)\b"
+    r"|\b(?:be|being)\s+transferred\b",
+    re.IGNORECASE,
+)
+_NOT_A_TRANSFER_PROMISE = re.compile(r"\b(?:not|never|unable|cannot)\b|n't\b", re.IGNORECASE)
+
+
 def say_do_match(run: RunRecord) -> list[str]:
-    """Every write the agent says it made follows a succeeded result from that write's tool."""
+    """Every write the agent says it made follows a succeeded result from that write's tool, and it never promises a transfer."""
     problems = []
     for position, (speaker, line) in enumerate(run.transcript):
         if speaker != "agent":
             continue
         for sentence in re.split(r"(?<=[.!?])\s+", line):
+            if _TRANSFER.search(sentence) and not _NOT_A_TRANSFER_PROMISE.search(sentence):
+                problems.append(f"promised a transfer, but the clinic only files a Callback Request: {sentence!r}")
             if sentence.endswith("?") or _NOT_A_CLAIM.search(sentence):
                 continue
             for write, (tool, claim) in _CLAIMS.items():
@@ -123,13 +135,22 @@ def _succeeded_before(run: RunRecord, tool: str, position: int) -> bool:
 
 
 def handoff_when_expected(run: RunRecord) -> list[str]:
-    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff."""
-    filed = run.end_state.callback_requests
-    if run.scenario.expect_handoff and not any(not request.emergency for request in filed):
-        return ["expected a Handoff, but no Callback Request was filed"]
-    if not run.scenario.expect_handoff and filed:
-        return [f"expected no Handoff, but a Callback Request was filed: {request.reason!r}" for request in filed]
-    return []
+    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff, and an emergency one if, and only if, it expects an Emergency Redirect."""
+    ordinary = [request for request in run.end_state.callback_requests if not request.emergency]
+    emergencies = [request for request in run.end_state.callback_requests if request.emergency]
+    problems = []
+    if run.scenario.expect_handoff and not ordinary:
+        problems.append("expected a Handoff, but no Callback Request was filed")
+    if not run.scenario.expect_handoff:
+        problems += [f"expected no Handoff, but a Callback Request was filed: {request.reason!r}" for request in ordinary]
+    if run.scenario.expect_emergency and not emergencies:
+        problems.append("expected an Emergency Redirect, but no emergency Callback Request was filed")
+    if not run.scenario.expect_emergency:
+        problems += [
+            f"expected no Emergency Redirect, but an emergency Callback Request was filed: {request.reason!r}"
+            for request in emergencies
+        ]
+    return problems
 
 
 GRADERS: dict[str, Callable[[RunRecord], list[str]]] = {

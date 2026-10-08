@@ -9,7 +9,7 @@ from anthropic import AsyncAnthropic
 from clinic_agent.booking import spoken_time
 from clinic_agent.conversation import CLINIC_NAME
 from clinic_evals.record import Seeded
-from clinic_evals.scenario import Scenario
+from clinic_evals.scenario import WRONG_BIRTH_DATE, Scenario
 
 # The simulated Caller is the same model whatever LLM config the agent runs, so configs are compared fairly.
 CALLER_MODEL = "claude-haiku-4-5"
@@ -61,6 +61,8 @@ def persona(scenario: Scenario, seeded: Seeded) -> str:
     names = {label: spoken_time(start) for label, start in seeded.slot_starts.items()}
     names |= {f"{label}_day": spoken_time(start).split(" at ")[0] for label, start in seeded.slot_starts.items()}
     born = date.fromisoformat(seeded.birth_date)
+    wrong = born.replace(year=born.year + 1, day=28 if (born.month, born.day) == (2, 29) else born.day)
+    names[WRONG_BIRTH_DATE] = f"{wrong:%B} {wrong.day}, {wrong.year}"
     return f"""\
 You are playing a patient who is phoning {CLINIC_NAME}, to test its automated receptionist.
 Stay in character as the caller for the whole call.

@@ -15,6 +15,7 @@ from pipecat.frames.frames import (
     LLMFullResponseStartFrame,
     LLMTextFrame,
 )
+from pipecat.metrics.metrics import LLMTokenUsage
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.llm_service import LLMService
@@ -37,7 +38,7 @@ class ScriptedLLM(LLMService):
     `llm` span holding the context and its reply, so logs and traces carry what they would on a real call.
     """
 
-    def __init__(self, steps: list[str | CallTool]):
+    def __init__(self, steps: list[str | CallTool], *, usage: LLMTokenUsage | None = None):
         super().__init__(
             settings=LLMSettings(
                 model="scripted",
@@ -54,6 +55,10 @@ class ScriptedLLM(LLMService):
             )
         )
         self.steps = list(steps)
+        self._usage = usage  # what each run reports as its token usage, when set
+
+    def can_generate_metrics(self) -> bool:
+        return True
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -80,4 +85,6 @@ class ScriptedLLM(LLMService):
             )
         else:
             await self.push_frame(LLMTextFrame(step))
+        if self._usage:
+            await self.start_llm_usage_metrics(self._usage)
         await self.push_frame(LLMFullResponseEndFrame())

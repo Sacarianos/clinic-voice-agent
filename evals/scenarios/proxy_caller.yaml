@@ -1,0 +1,12 @@
+summary: A daughter phones to book for her mother and gets a Handoff.
+patient: {given: Beatrix, family: Lindqvist}
+provider: null
+caller:
+  goal: Book a checkup for your mother, who is too frail to phone herself.
+  twist: >-
+    You are Anya, her adult daughter, not the patient. The name and date of birth in "Who you are"
+    are your mother's, which you know if asked. Say you are calling for your mother as soon as you
+    are asked how the receptionist can help. Accept the answer you get and say goodbye.
+expect:
+  appointments: []
+  handoff: true
