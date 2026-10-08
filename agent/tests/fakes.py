@@ -1,10 +1,13 @@
 """Stand-ins for Deepgram and the LLM so a call runs without network or API keys."""
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
 from pipecat.frames.frames import (
+    BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     Frame,
     FunctionCallFromLLM,
     LLMContextFrame,
@@ -13,12 +16,14 @@ from pipecat.frames.frames import (
     LLMRunFrame,
     LLMSetToolsFrame,
     LLMTextFrame,
+    TranscriptionFrame,
     TTSAudioRawFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import LLMService
 from pipecat.services.settings import LLMSettings, TTSSettings
 from pipecat.services.tts_service import TTSService
+from pipecat.utils.time import time_now_iso8601
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,44 @@ class SilentSTT(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+@dataclass(frozen=True)
+class TalkOver:
+    """A Caller line said while the agent is still talking."""
+
+    line: str
+
+
+class ScriptedCaller(FrameProcessor):
+    """Stands in for STT and a Caller on the phone. Each line answers the agent's next stretch of speech.
+
+    A plain line comes a moment after the agent stops talking. A TalkOver line comes a moment after it
+    starts, and cuts it off. Each line arrives as a finished transcript, the way Deepgram delivers one.
+    """
+
+    def __init__(self, lines: list[str | TalkOver], pause_secs: float = 0.3):
+        super().__init__()
+        self.lines = list(lines)
+        self._pause_secs = pause_secs
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        await self.push_frame(frame, direction)
+        if direction != FrameDirection.UPSTREAM or not self.lines:
+            return
+        talks_over = isinstance(self.lines[0], TalkOver)
+        if (isinstance(frame, BotStartedSpeakingFrame) and talks_over) or (
+            isinstance(frame, BotStoppedSpeakingFrame) and not talks_over
+        ):
+            line = self.lines.pop(0)
+            self.create_task(self._say(line.line if talks_over else line))
+
+    async def _say(self, line: str):
+        await asyncio.sleep(self._pause_secs)
+        await self.push_frame(
+            TranscriptionFrame(text=line, user_id="caller", timestamp=time_now_iso8601(), finalized=True)
+        )
+
+
 class RunLLMOnceGreeted(FrameProcessor):
     """Stands in for STT and a Caller who says nothing aloud. The LLM gets one turn once the flow has set its tools."""
 
@@ -97,19 +140,18 @@ class RunLLMOnceGreeted(FrameProcessor):
 
 
 class RecordingTTS(TTSService):
-    """Records the text it is asked to speak and answers with a short burst of silence."""
+    """Records the text it is asked to speak and answers with silence, a tenth of a second per sentence by default."""
 
-    def __init__(self):
+    def __init__(self, seconds_per_sentence: float = 0.1):
         super().__init__(
             push_start_frame=True,
             push_stop_frames=True,
             settings=TTSSettings(model=None, voice=None, language=None),
         )
         self.spoken: list[str] = []
+        self._seconds_per_sentence = seconds_per_sentence
 
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
         self.spoken.append(text)
-        tenth_of_a_second = b"\x00\x00" * (self.sample_rate // 10)
-        yield TTSAudioRawFrame(
-            audio=tenth_of_a_second, sample_rate=self.sample_rate, num_channels=1, context_id=context_id
-        )
+        silence = b"\x00\x00" * int(self.sample_rate * self._seconds_per_sentence)
+        yield TTSAudioRawFrame(audio=silence, sample_rate=self.sample_rate, num_channels=1, context_id=context_id)
