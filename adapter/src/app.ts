@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { Config } from "./config.ts";
 import { createFhirClient, EhrUnavailableError } from "./fhir/client.ts";
+import { callbackRequestRoutes } from "./callback-requests/routes.ts";
 import { patientRoutes } from "./patients/routes.ts";
 import { appointmentRoutes, providerRoutes, slotRoutes } from "./scheduling/routes.ts";
 
@@ -13,6 +14,7 @@ export function createApp(config: Config) {
   return new Hono()
     .get("/healthz", (c) => c.json({ ok: true }))
     .route("/patients", patientRoutes(fhir))
+    .route("/callback-requests", callbackRequestRoutes(fhir))
     .route("/providers", providerRoutes(fhir))
     .route("/slots", slotRoutes(fhir))
     .route("/appointments", appointmentRoutes(fhir))

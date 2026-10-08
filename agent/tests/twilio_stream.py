@@ -4,8 +4,8 @@ CALL_SID = "CA00000000000000000000000000000001"
 STREAM_SID = "MZ00000000000000000000000000000001"
 
 
-def start_media_stream(twilio):
-    """The two messages Twilio sends when a <Stream> opens."""
+def start_media_stream(twilio, from_number=None):
+    """The two messages Twilio sends when a <Stream> opens. It passes along the <Parameter>s of the TwiML."""
     twilio.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
     twilio.send_json(
         {
@@ -17,7 +17,7 @@ def start_media_stream(twilio):
                 "callSid": CALL_SID,
                 "accountSid": "AC00000000000000000000000000000001",
                 "tracks": ["inbound"],
-                "customParameters": {},
+                "customParameters": {"from_number": from_number} if from_number else {},
                 "mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000, "channels": 1},
             },
         }
@@ -35,3 +35,4 @@ def hang_up(twilio):
     """Twilio sends a stop message and then closes the socket."""
     twilio.send_json({"event": "stop", "streamSid": STREAM_SID, "stop": {"callSid": CALL_SID}})
     twilio.close()
+

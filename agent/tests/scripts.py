@@ -16,3 +16,11 @@ def verify(given_name: str, family_name: str, date_of_birth: str) -> CallTool:
         "verify_patient",
         {"given_name": given_name, "family_name": family_name, "date_of_birth": date_of_birth},
     )
+
+
+def handoff(reason: str) -> CallTool:
+    return CallTool("handoff", {"reason": reason})
+
+
+def emergency_redirect() -> CallTool:
+    return CallTool("emergency_redirect")
