@@ -1,10 +1,13 @@
 """The agent's side of the EHR adapter's HTTP API. The agent knows nothing about FHIR."""
 
+import os
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
 
 import httpx
+
+from clinic_agent.audit import AuditLog
 
 DEFAULT_EHR_ADAPTER_URL = "http://localhost:3000"
 
@@ -61,8 +64,13 @@ class WriteOutcome:
 
 
 class EhrAdapter:
-    def __init__(self, base_url: str):
+    """audit_log records every write sent through this adapter (see writes.py). By default it is the file
+    AUDIT_LOG_PATH names.
+    """
+
+    def __init__(self, base_url: str, audit_log: AuditLog | None = None):
         self.base_url = base_url.rstrip("/")
+        self.audit_log = audit_log or AuditLog.from_env(os.environ)
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self.base_url, timeout=5)

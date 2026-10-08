@@ -6,7 +6,7 @@ CALL_SID = "CA00000000000000000000000000000001"
 STREAM_SID = "MZ00000000000000000000000000000001"
 
 
-def start_media_stream(twilio, from_number=None):
+def start_media_stream(twilio, from_number=None, call_sid=CALL_SID):
     """The two messages Twilio sends when a <Stream> opens. It passes along the <Parameter>s of the TwiML."""
     twilio.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
     twilio.send_json(
@@ -16,7 +16,7 @@ def start_media_stream(twilio, from_number=None):
             "streamSid": STREAM_SID,
             "start": {
                 "streamSid": STREAM_SID,
-                "callSid": CALL_SID,
+                "callSid": call_sid,
                 "accountSid": "AC00000000000000000000000000000001",
                 "tracks": ["inbound"],
                 "customParameters": {"from_number": from_number} if from_number else {},

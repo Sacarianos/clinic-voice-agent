@@ -12,6 +12,7 @@ from clinic_agent.booking import Exits, find_slots_tool
 from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.escalation import HandoffReason, escalation_tools, handoff
+from clinic_agent.phi import PHI, PHONE
 from clinic_agent.pipeline import Call
 
 CLINIC_NAME = "Cedar Hollow Family Medicine"
@@ -90,6 +91,7 @@ async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str) -> 
         global_functions=[*escalation_tools(ehr), clinic_info_tool()],
     )
     flow.state["caller_phone"] = caller_phone
+    PHI.learn(caller_phone, PHONE)
     await flow.initialize(_verify_identity_node(GREETING, ehr))
     return flow
 

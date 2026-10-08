@@ -25,3 +25,6 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+
+# Audit log of write attempts (see docs/phi-policy.md)
+audit-log.jsonl

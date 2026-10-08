@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
+from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
@@ -148,7 +149,8 @@ class Booking:
             async def is_booked() -> bool:
                 return any(a.slot_id == slot.slot_id for a in await self.ehr.appointments(patient_id))
 
-            written = await write_until_settled(book, is_booked)
+            write = Write("book", patient_id, idempotency_key, slot_id=slot.slot_id)
+            written = await write_until_settled(self.ehr.audit_log, write, book, is_booked)
             if written.outcome == "succeeded":
                 booked = f"You're all booked: {_details(slot, visit_type)}. Is there anything else I can help with?"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(booked)

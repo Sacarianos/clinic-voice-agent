@@ -19,6 +19,8 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import LLMService
 
+from clinic_agent.phi import PhiRedactionProcessor
+
 
 @dataclass(frozen=True)
 class Call:
@@ -40,7 +42,9 @@ def build_call(
     """hear: processors that turn the Caller into transcripts. speak: processors that turn replies into output."""
     context = LLMContext()
     aggregators = LLMContextAggregatorPair(context, user_params=user_params)
-    pipeline = Pipeline([_KeepFlowActionsAlive(), *hear, aggregators.user(), llm, *speak, aggregators.assistant()])
+    pipeline = Pipeline(
+        [_KeepFlowActionsAlive(), *hear, PhiRedactionProcessor(), aggregators.user(), llm, *speak, aggregators.assistant()]
+    )
     worker = PipelineWorker(pipeline, params=params, **worker_options)
     return Call(worker=worker, llm=llm, context=context, aggregators=aggregators)
 

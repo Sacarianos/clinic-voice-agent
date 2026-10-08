@@ -13,10 +13,11 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
     TTSAudioRawFrame,
 )
-from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor, FrameProcessorSetup
 from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import TTSService
 from pipecat.utils.time import time_now_iso8601
+from pipecat.utils.tracing.service_decorators import traced_stt, traced_tts
 
 # The scripted LLM ships with the text transport, so the eval harness's tests can use it too.
 from clinic_agent.scripted_llm import CallTool, ScriptedLLM  # noqa: F401
@@ -41,13 +42,21 @@ class ScriptedCaller(FrameProcessor):
     """Stands in for STT and a Caller on the phone. Each line answers the agent's next stretch of speech.
 
     A plain line comes a moment after the agent stops talking. A TalkOver line comes a moment after it
-    starts, and cuts it off. Each line arrives as a finished transcript, the way Deepgram delivers one.
+    starts, and cuts it off. Each line arrives as a finished transcript, the way Deepgram delivers one,
+    and with tracing on it is traced as an `stt` span holding the transcript, as Deepgram's are.
     """
 
     def __init__(self, lines: list[str | TalkOver], pause_secs: float = 0.3):
         super().__init__()
         self.lines = list(lines)
         self._pause_secs = pause_secs
+        self._tracing_enabled = False
+
+    async def setup(self, setup: FrameProcessorSetup):
+        await super().setup(setup)
+        # Pipecat's STT tracing reads these, as it does on a real STT service.
+        self._tracing_enabled = setup.enable_tracing
+        self._tracing_context = setup.tracing_context
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -61,6 +70,7 @@ class ScriptedCaller(FrameProcessor):
             line = self.lines.pop(0)
             self.create_task(self._say(line.line if talks_over else line))
 
+    @traced_stt
     async def _say(self, line: str):
         await asyncio.sleep(self._pause_secs)
         await self.push_frame(
@@ -84,7 +94,10 @@ class RunLLMOnceGreeted(FrameProcessor):
 
 
 class RecordingTTS(TTSService):
-    """Records the text it is asked to speak and answers with silence, a tenth of a second per sentence by default."""
+    """Records the text it is asked to speak and answers with silence, a tenth of a second per sentence by default.
+
+    Like Deepgram's TTS, it traces each sentence as a `tts` span holding the text.
+    """
 
     def __init__(self, seconds_per_sentence: float = 0.1):
         super().__init__(
@@ -95,6 +108,7 @@ class RecordingTTS(TTSService):
         self.spoken: list[str] = []
         self._seconds_per_sentence = seconds_per_sentence
 
+    @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
         self.spoken.append(text)
         silence = b"\x00\x00" * int(self.sample_rate * self._seconds_per_sentence)

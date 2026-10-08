@@ -4,7 +4,7 @@
 // because the local stack keeps its data and the seed tests count what the clinic holds.
 
 import { randomUUID } from "node:crypto";
-import type { Appointment, Bundle, FhirResource, Patient, Practitioner, Schedule, Slot } from "fhir/r4";
+import type { Appointment, Bundle, FhirResource, Patient, Practitioner, Schedule, Slot, Task } from "fhir/r4";
 
 export const fhirBaseUrl = (process.env.FHIR_BASE_URL ?? "http://localhost:8080/fhir").replace(/\/+$/, "");
 
@@ -37,11 +37,17 @@ async function create<T extends FhirResource>(resource: T): Promise<string> {
 }
 
 // Newest first, so a record goes before the records it points at. Appointments the adapter booked
-// into a test's Slots aren't on the list, so they go first.
+// into a test's Slots, and Callback Requests it filed for a test's Patients, aren't on the list, so
+// they go first.
 export async function deleteCreatedRecords() {
   for (const slot of createdRecords.filter((record) => record.startsWith("Slot/"))) {
     for (const appointment of await search<Appointment>(`Appointment?slot=${slot}`)) {
       await fhir("DELETE", `Appointment/${appointment.id}`);
+    }
+  }
+  for (const patient of createdRecords.filter((record) => record.startsWith("Patient/"))) {
+    for (const task of await search<Task>(`Task?patient=${patient}`)) {
+      if (!createdRecords.includes(`Task/${task.id}`)) await fhir("DELETE", `Task/${task.id}`);
     }
   }
   while (createdRecords.length > 0) await fhir("DELETE", createdRecords.pop()!);
