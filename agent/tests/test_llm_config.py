@@ -1,8 +1,11 @@
 import pytest
+from pipecat.adapters.schemas.direct_function import tool_options
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
 
-from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_context import NOT_GIVEN, LLMContext
 
 from clinic_agent.config import ConfigError
 from clinic_agent.llm import create_llm
@@ -10,9 +13,10 @@ from clinic_agent.llm import create_llm
 PROMPT = "You are the clinic receptionist."
 
 
-async def request_sent_to_anthropic(llm) -> dict:
+async def request_sent_to_anthropic(llm, tools: ToolsSchema = NOT_GIVEN) -> dict:
     """Runs one turn against a stand-in for Anthropic and returns the request pipecat built."""
     sent = {}
+    context = LLMContext(messages=[{"role": "user", "content": "Hello"}], tools=tools)
 
     async def capture(api_call, params):
         sent.update(params)
@@ -24,7 +28,9 @@ async def request_sent_to_anthropic(llm) -> dict:
         return no_events()
 
     llm._create_message_stream = capture
-    await llm._process_context(LLMContext(messages=[{"role": "user", "content": "Hello"}]))
+    # What the service does with every context frame before it runs inference.
+    llm._sync_registered_tool_handlers(context.tools)
+    await llm._process_context(context)
     return sent
 
 
@@ -62,6 +68,20 @@ async def test_haiku_5_5_requests_carry_no_sampling_parameters_it_would_reject()
 
     sent = request.keys() | request.get("extra_body", {}).keys()
     assert not {"temperature", "top_p", "top_k"} & sent
+
+
+@pytest.mark.parametrize("config", ["haiku", "haiku-4-5"])
+async def test_a_tool_that_survives_interruption_adds_nothing_to_the_system_prompt(config):
+    llm = create_llm({"LLM_CONFIG": config, "ANTHROPIC_API_KEY": "placeholder"}, system_instruction=PROMPT)
+
+    @tool_options(cancel_on_interruption=False)
+    async def handoff(params):
+        pass
+
+    tools = ToolsSchema(standard_tools=[FunctionSchema("handoff", "End the call", {}, [], handler=handoff)])
+    request = await request_sent_to_anthropic(llm, tools)
+
+    assert request["system"] == PROMPT
 
 
 def test_gemini_config_uses_gemini_3_6_flash_through_openrouter():
