@@ -124,7 +124,7 @@ The server needs the local EHR stack running and reaches the adapter at `EHR_ADA
 
 A Handoff files a Callback Request through the adapter and tells the Caller staff will call back. It fires on a request for a person, a Proxy Caller, a new patient, a clinical question, a second failed verification, and a spelled name that still matches more than one Patient. An emergency mention triggers an Emergency Redirect from any state, before or after verification: the agent says to hang up and dial 911, files an emergency Callback Request and ends the call. Both tools are offered in every node as flow-wide functions, as is `get_clinic_info`, which answers Clinic Questions from the static config in `clinic.py`. If a Callback Request can't be saved, the Caller is told so instead of being promised a callback. The number it calls back comes from Twilio's `From`: `/voice` passes it to the media stream as a `from_number` stream parameter. It is never used to verify anyone.
 
-You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 4.5 and `ANTHROPIC_API_KEY`. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. The server also needs `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`: the agent hangs up calls through Twilio's API, and checks that every `/voice` request comes from Twilio. With both Langfuse keys set, every call is traced to Langfuse Cloud.
+You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 5.5 with thinking off and `ANTHROPIC_API_KEY`. `LLM_CONFIG=haiku-4-5` uses Claude Haiku 4.5 with the same key. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. The server also needs `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`: the agent hangs up calls through Twilio's API, and checks that every `/voice` request comes from Twilio. With both Langfuse keys set, every call is traced to Langfuse Cloud.
 
 Start the server, then the tunnel in a second terminal:
 
@@ -175,7 +175,7 @@ async with start_call(["What is your full name and date of birth?", verify("Rosa
 
 ## Evals
 
-The eval harness in `evals/` runs whole calls through the same text transport as the conversation tests, with a real LLM config playing the agent and a second LLM, Claude Haiku 4.5, playing the Patient. Real runs cost money, so they never run in CI.
+The eval harness in `evals/` runs whole calls through the same text transport as the conversation tests, with a real LLM config playing the agent and a second LLM, Claude Haiku 4.5 whatever the agent runs, playing the Patient. Real runs cost money, so they never run in CI.
 
 Each scenario is a YAML file in `evals/scenarios/`: the Patient, the run's own Provider and Slots, any Appointments the Patient already holds, the Caller's goal and twist, and the expected end state. Slots are given as clinic weekdays after today and a time, so a scenario works on any day. The goal and twist can name a Slot, as `{late}` for its day and time or `{late_day}` for its day. There are ten:
 
@@ -213,7 +213,7 @@ The report has one column per LLM config:
 - Pass rate for every grader.
 - Per-turn latency, P50 and P95: from the Caller's line to the agent finishing its turn, tool time included. This is the wait until the agent stops talking, which is longer than a phone's wait for the first word.
 - Tool time, P50 and P95, across every tool call.
-- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 is priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`. A config without a price there shows tokens and `n/a`.
+- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`. A config without a price there shows tokens and `n/a`.
 
 `clinic-evals --report` prints the latest saved batch of each config side by side without running anything. Run each config once to compare them.
 
