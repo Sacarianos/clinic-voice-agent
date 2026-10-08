@@ -41,7 +41,7 @@ Caller's phone
         WS   /ws    : one Pipecat pipeline per call
   Pipecat pipeline:
     transport in, Silero VAD -> Deepgram Nova-3 STT -> user context
-      -> LLM, Claude Haiku 4.5 by default and swappable
+      -> LLM, Claude Haiku 5.5 by default and swappable
       -> Deepgram Aura-2 TTS -> transport out -> assistant context
     pipecat.flows: conversation state machine
     Custom processors: PHI redaction
@@ -82,7 +82,7 @@ The state machine enforces the safety rules in code. See [ADR 0003](adr/0003-saf
 | Turn detection | Silero VAD | Tune the silence threshold |
 | Telephony | Twilio trial | Only verified numbers can call in. Stays on trial |
 | STT | Deepgram Nova-3 | Keyterm prompting with provider names |
-| LLM baseline | Claude Haiku 4.5, `claude-haiku-4-5` | Anthropic direct. Swappable in config |
+| LLM default | Claude Haiku 5.5, `claude-haiku-5-5`, thinking off | Anthropic direct. Swappable in config. Haiku 4.5 stays as the `haiku-4-5` config |
 | LLM comparison | Gemini 3.6 Flash via OpenRouter | `google/gemini-3.6-flash` |
 | TTS | Deepgram Aura-2 | Same Deepgram account |
 | Mock EHR | HAPI FHIR in Docker | Patient records only, no clinical history |
@@ -148,7 +148,7 @@ Decision rule, written before running:
 
 With 10 scenarios only large gaps mean anything.
 
-- [ ] Haiku 4.5 vs Gemini 3.6 Flash comparison in `docs/results/llm-selection.md`
+- [ ] Haiku 5.5 vs Haiku 4.5 vs Gemini 3.6 Flash comparison in `docs/results/llm-selection.md`
 - [ ] Winner chosen by the rule, with the reasoning
 
 ### Dropped for now

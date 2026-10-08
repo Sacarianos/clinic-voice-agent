@@ -16,8 +16,10 @@ class Price:
 
 
 # Anthropic's list prices. A config whose model isn't here reports tokens but no cost, rather than a guess.
+# Haiku 5.5 has a second rate card for prompts over 100K tokens ($0.50 / $2.50). A call here never gets near that.
 PRICES = {
     "claude-haiku-4-5": Price(input=1.00, output=5.00, cache_read=0.10, cache_write=1.25),
+    "claude-haiku-5-5": Price(input=0.10, output=0.50, cache_read=0.01, cache_write=0.125),
 }
 
 
