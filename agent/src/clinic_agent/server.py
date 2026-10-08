@@ -20,8 +20,8 @@ from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPI
 from pipecat.workers.runner import WorkerRunner
 
 from clinic_agent.config import ConfigError
+from clinic_agent.conversation import start_conversation
 from clinic_agent.pipeline import build_call
-from clinic_agent.receptionist import start_conversation
 from clinic_agent.services import VoiceServices, phone_services
 from clinic_agent.tracing import configure_tracing
 
@@ -97,7 +97,7 @@ def create_app(
 
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
-            await start_conversation(call)
+            await start_conversation(call, services.ehr)
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

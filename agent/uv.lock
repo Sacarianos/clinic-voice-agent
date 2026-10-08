@@ -215,6 +215,7 @@ name = "clinic-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "pipecat-ai", extra = ["anthropic", "deepgram", "tracing", "websocket"] },
     { name = "python-multipart" },
@@ -223,7 +224,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
@@ -231,6 +231,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45.1" },
     { name = "pipecat-ai", extras = ["anthropic", "deepgram", "openrouter", "silero", "tracing", "websocket"], specifier = "==1.12.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
@@ -239,7 +240,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
