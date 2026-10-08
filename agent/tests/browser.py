@@ -5,7 +5,6 @@ track to `/sessions/<id>/api/offer`. The microphone here is silent: tests stand 
 """
 
 import asyncio
-import contextlib
 import json
 import time
 import uuid
@@ -76,13 +75,17 @@ class Browser:
         """Closes the call the way the page's disconnect button does, then waits for the server to finish it."""
         if self._keepalive:
             self._keepalive.cancel()
-        # About 1 run in 25 on Windows, aioice waits forever for a UDP socket it closed to report closed. By
-        # then the DTLS goodbye has gone out, so the server knows; the wait for it to end the call says so.
-        with contextlib.suppress(TimeoutError):
-            async with asyncio.timeout(2):
-                await self._peer.close()
+        # The close runs on its own while the server ends the call. Its last step can hang: about 1 run in 25 on
+        # Windows, aioice waits forever for a UDP socket it closed to report closed. Under a loaded full suite
+        # the steps before it can take over 2 s, and a close cut short there never sends the DTLS goodbye, so
+        # the server never hears the hang-up. So the close is only dropped once the server has ended the call.
+        closing = asyncio.create_task(self._peer.close())
         await self._http.aclose()
-        await self.call_ended(seconds)
+        try:
+            await self.call_ended(seconds)
+        finally:
+            await asyncio.wait({closing}, timeout=2)
+            closing.cancel()
 
     async def call_ended(self, seconds: float = 10) -> None:
         """Waits for the server to finish the call, as it does after the agent says goodbye."""
