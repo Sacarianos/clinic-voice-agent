@@ -26,6 +26,13 @@ def test_haiku_cost_is_priced_per_million_tokens_with_cheaper_cache_reads_and_de
     assert call_cost("claude-haiku-4-5", usage) == pytest.approx(0.018)
 
 
+def test_haiku_5_5_cost_uses_its_own_cheaper_rates_for_prompts_up_to_100k_tokens():
+    usage = TokenUsage(input_tokens=10_000, output_tokens=1_000, cache_read_tokens=5_000, cache_write_tokens=2_000)
+
+    # 10k input at $0.10, 1k output at $0.50, 5k cache reads at $0.01, 2k cache writes at $0.125, per million.
+    assert call_cost("claude-haiku-5-5", usage) == pytest.approx(0.0018)
+
+
 def test_a_model_without_a_known_price_has_no_cost():
     assert call_cost("some-new-model", TokenUsage(input_tokens=1_000)) is None
     assert call_cost(None, TokenUsage(input_tokens=1_000)) is None

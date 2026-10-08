@@ -16,7 +16,7 @@ def test_a_phone_call_hears_with_nova_3_thinks_with_haiku_and_speaks_with_aura_2
     assert isinstance(services.stt, DeepgramSTTService)
     assert services.stt.settings.model == "nova-3-general"
     assert isinstance(services.llm, AnthropicLLMService)
-    assert services.llm.settings.model == "claude-haiku-4-5"
+    assert services.llm.settings.model == "claude-haiku-5-5"
     assert services.llm.settings.system_instruction == ROLE
     assert isinstance(services.tts, DeepgramTTSService)
     assert services.tts.settings.voice.startswith("aura-2-")
