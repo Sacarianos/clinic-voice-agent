@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from ehr import clinic_time
 from fakes import CallTool, RecordingTTS, RunLLMOnceGreeted, ScriptedCaller, ScriptedLLM, SilentSTT, TalkOver
-from scripts import answer_read_back, handoff, spoken, verify
+from scripts import answer_read_back, handoff, spoken, unused_phone, verify
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
@@ -160,7 +160,7 @@ def test_a_phone_call_without_caller_id_never_teaches_the_mask_a_placeholder_pho
 def test_a_callback_request_filed_on_a_phone_call_has_the_number_twilio_passed_as_a_stream_parameter(
     ehr, ehr_adapter_url
 ):
-    phone = "+15555550188"
+    phone = unused_phone()
     app = _app(
         lambda: VoiceServices(
             stt=RunLLMOnceGreeted(),
@@ -188,7 +188,7 @@ def test_a_caller_verifies_and_books_over_the_phone_through_the_same_conversatio
     nine = clinic_time(1, "09:00")
     nine_slot = ehr.create_slot(faraday, nine)
     day = nine.date().isoformat()
-    phone = "+15555550177"
+    phone = unused_phone()
     caller = ScriptedCaller(
         [
             "Hi, I'd like to book an appointment.",
@@ -245,7 +245,7 @@ def test_a_caller_who_says_yes_over_the_read_back_is_asked_again_and_can_still_b
     nine = clinic_time(1, "09:00")
     nine_slot = ehr.create_slot(faraday, nine)
     day = nine.date().isoformat()
-    phone = "+15555550178"
+    phone = unused_phone()
     caller = ScriptedCaller(
         [
             "Hi, I'd like to book an appointment.",

@@ -1,8 +1,14 @@
 """Building blocks for scripted calls: what the Caller says and what the fake LLM does."""
 
+import random
 from datetime import date
 
 from fakes import CallTool
+
+
+def unused_phone() -> str:
+    """A phone number of the test's own, so tests running at the same time never find each other's Callback Requests."""
+    return f"+1555{random.randrange(10**7):07d}"
 
 
 def spoken(iso_date: str) -> str:
