@@ -3,7 +3,9 @@
 import pytest
 from ehr import clinic_time
 from fakes import CallTool
-from scripts import spoken, verify
+from scripts import answer_read_back, own_tools, spoken, verify
+
+NOT_AVAILABLE = "The function `{}` is not currently available."
 
 
 def spoken_day(when) -> str:
@@ -49,6 +51,7 @@ async def test_a_verified_patient_books_a_slot_after_a_read_back_and_a_yes(ehr, 
             ),
             "Dr. Faraday has 9 AM or 9:30 AM tomorrow. Which works, and what is the visit for?",
             CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
         ]
     ) as call:
@@ -81,6 +84,51 @@ async def test_a_verified_patient_books_a_slot_after_a_read_back_and_a_yes(ehr, 
         said_before_the_result = [line for _, line in call.transcript[: book.transcript_position]]
         assert read_back in said_before_the_result
         assert call.agent_lines[-1] not in said_before_the_result
+        assert call.tool_results("record_read_back_answer") == [{"answer": "yes"}]
+        offering_book = [own_tools(tools) for tools in call.offered_tools if "book_appointment" in tools]
+        assert offering_book
+        assert all(tools == {"book_appointment"} for tools in offering_book)
+
+
+@pytest.mark.scripted_only
+async def test_a_no_to_the_read_back_goes_back_to_choosing_and_a_book_called_at_the_read_back_is_refused(
+    ehr, start_call
+):
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+    faraday = ehr.create_provider(given="Imogen", family="Faraday")
+    nine_slot = ehr.create_slot(faraday, clinic_time(1, "09:00"))
+    ehr.create_slot(faraday, clinic_time(1, "09:30"))
+
+    async with start_call(
+        [
+            "Sure. What is your full name and date of birth?",
+            verify("Rosalind", "Okonkwo", born),
+            CallTool("find_slots", {"provider": faraday.name}),
+            "Dr. Faraday has 9 AM or 9:30 AM tomorrow. What is the visit for?",
+            CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "sick_visit"}),
+            # The Caller says no, and the LLM books anyway, then records the no and tries once more.
+            CallTool("book_appointment"),
+            answer_read_back("no"),
+            CallTool("book_appointment"),
+            "Sorry about that. Which time would you like instead?",
+        ]
+    ) as call:
+        await call.converse(
+            ["I'd like an appointment.", f"Rosalind Okonkwo, {spoken(born)}.", "9 AM, a sick visit."]
+        )
+        assert call.state == "read_back"
+        at_read_back = len(call.offered_tools)
+
+        await call.say("No, that's wrong.")
+
+        assert own_tools(call.offered_tools[at_read_back]) == {"record_read_back_answer"}
+        assert call.tool_results("book_appointment") == [NOT_AVAILABLE.format("book_appointment")] * 2
+        assert call.tool_results("record_read_back_answer") == [{"answer": "no"}]
+        assert call.state == "find_slot"
+        assert call.agent_lines[-1] == "Sorry about that. Which time would you like instead?"
+        assert ehr.appointments_of(patient_id) == []
+        assert ehr.slot_status(nine_slot) == "free"
 
 
 @pytest.mark.scripted_only
@@ -101,7 +149,10 @@ async def test_book_is_unreachable_until_a_read_back_and_books_only_the_details_
             CallTool("book_appointment"),
             "I have 9 AM or 9:30 AM. Which would you like, and what is the visit for?",
             CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "sick_visit"}),
+            answer_read_back("change"),
+            CallTool("book_appointment"),
             CallTool("choose_slot", {"slot_id": half_past_nine_slot, "visit_type": "follow_up"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
         ]
     ) as call:
@@ -109,16 +160,20 @@ async def test_book_is_unreachable_until_a_read_back_and_books_only_the_details_
             [
                 "I'd like an appointment.",
                 f"Rosalind Okonkwo, {spoken(born)}.",
-                "Just book me in, whatever time.",
-                f"{faraday.name}.",
+                f"{faraday.name}. Just book me in, whatever time.",
                 "Nine is fine, I'm sick.",
             ]
         )
-        not_available = "The function `book_appointment` is not currently available."
+        not_available = NOT_AVAILABLE.format("book_appointment")
         assert call.tool_results("book_appointment") == [not_available, not_available]
+        assert call.state == "read_back"
         assert ehr.appointments_of(patient_id) == []
 
         await call.say("Actually, make it 9:30, and it's a follow-up.")
+        assert call.tool_results("record_read_back_answer") == [{"answer": "change"}]
+        assert call.tool_results("book_appointment") == [not_available] * 3
+        assert ehr.appointments_of(patient_id) == []
+        assert call.state == "read_back"
         assert "9:30 AM" in call.agent_lines[-1]
         assert "a follow-up" in call.agent_lines[-1]
 
@@ -150,12 +205,14 @@ async def test_asking_for_another_time_during_the_read_back_offers_new_slots_wit
             ),
             "Dr. Faraday has 9 AM. What is the visit for?",
             CallTool("choose_slot", {"slot_id": morning_slot, "visit_type": "sick_visit"}),
+            answer_read_back("change"),
             CallTool(
                 "find_slots",
                 {"provider": faraday.name, "from_date": day, "to_date": day, "part_of_day": "afternoon"},
             ),
             "Dr. Faraday is free at 3 PM. Would that work?",
             CallTool("choose_slot", {"slot_id": afternoon_slot, "visit_type": "sick_visit"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
         ]
     ) as call:
@@ -197,6 +254,7 @@ async def test_a_slot_taken_before_the_yes_is_not_claimed_as_booked_and_new_slot
             CallTool("find_slots", {"provider": faraday.name}),
             "Dr. Faraday has 9 AM or 10 AM. What is the visit for?",
             CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "follow_up"}),
+            answer_read_back("yes"),
             CallTool("book_appointment"),
             "Dr. Faraday still has 10 AM. Would that work?",
         ]

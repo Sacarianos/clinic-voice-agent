@@ -1,9 +1,9 @@
 """Booking, the part of the conversation from Find slot through Read-back to the Book write.
 
 Per ADR 0003 the write is reachable only one way. choose_slot fixes the exact Slot and Visit Type and
-moves to the Read-back node, which speaks those details itself. Only that node offers
+moves to the Read-back, which speaks those details itself. Only a recorded yes to it reaches
 book_appointment, which takes no arguments: it books what was read back, under an idempotency key
-made for that Read-back. Choosing again or searching again leaves the node, and the tool with it.
+made for that Read-back. A no or a change goes back to choosing, and the tool stays out of reach.
 """
 
 import uuid
@@ -19,6 +19,7 @@ from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
 from clinic_agent.escalation import handoff
 from clinic_agent.holding import with_holding_line
+from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
@@ -37,11 +38,9 @@ Don't repeat the details or ask the caller to confirm them yourself: choose_slot
 If they want other times, call find_slots again.
 """
 
-READ_BACK_TASK = """\
-You just read the appointment details back to the caller and asked if they are right.
-If the caller clearly says yes, call book_appointment. Never say the appointment is booked before it returns.
-If they want a different time, Provider or visit type, call choose_slot for a time already offered,
-or find_slots for new times. If they are unsure, answer their question and ask again.
+CHOOSE_AGAIN_TASK = """\
+The caller didn't want what you read back. If they said what they want instead, call choose_slot for
+a time already offered, or find_slots for new times. Otherwise ask what they would like to change.
 """
 
 
@@ -61,6 +60,7 @@ class Booking:
     exits: Exits
 
     find_slot_task: ClassVar[str] = FIND_SLOT_TASK
+    choose_again_task: ClassVar[str] = CHOOSE_AGAIN_TASK
     choose_slot_description: ClassVar[str] = (
         "Pick the offered time the caller wants and the visit type, before reading them back."
     )
@@ -161,7 +161,7 @@ class Booking:
 
         return FlowsFunctionSchema(
             name="book_appointment",
-            description="Book exactly what you read back. Call only after the caller clearly says yes to it.",
+            description="Book exactly what you read back, now that the caller has said yes to it.",
             properties={},
             required=[],
             handler=with_holding_line(book_appointment),
@@ -177,10 +177,10 @@ class Booking:
         result = {"outcome": "rejected", "reason": reason, **self._offer(search, flow_manager)}
         return result, self.find_slot_node(opening_line=SLOT_GONE)
 
-    def find_slot_node(self, opening_line: str | None = None) -> NodeConfig:
+    def find_slot_node(self, opening_line: str | None = None, task: str | None = None) -> NodeConfig:
         node: NodeConfig = {
             "name": "find_slot",
-            "task_messages": [{"role": "developer", "content": self.find_slot_task}],
+            "task_messages": [{"role": "developer", "content": task or self.find_slot_task}],
             "functions": [self.find_slots_tool(), self.choose_slot_tool()],
         }
         if opening_line:
@@ -188,13 +188,16 @@ class Booking:
         return node
 
     def read_back_node(self, slot: Slot, visit_type: str) -> NodeConfig:
-        return {
-            "name": "read_back",
-            "pre_actions": [{"type": "tts_say", "text": f"Just to confirm, {_details(slot, visit_type)}. Is that right?"}],
-            "task_messages": [{"role": "developer", "content": READ_BACK_TASK}],
-            "functions": [self.book_tool(slot, visit_type), self.choose_slot_tool(), self.find_slots_tool()],
-            "respond_immediately": False,
-        }
+        return read_back_node(
+            "read_back",
+            f"Just to confirm, {_details(slot, visit_type)}. Is that right?",
+            then_write=write_node("book", self.book_tool(slot, visit_type)),
+            choose_again=self.choose_again_node,
+        )
+
+    def choose_again_node(self) -> NodeConfig:
+        """Back to choosing a time, after a no or a change at the Read-back."""
+        return self.find_slot_node(task=self.choose_again_task)
 
     def _offer(self, search: SlotSearch, flow_manager: FlowManager) -> dict:
         offered = flow_manager.state.setdefault("offered_slots", {})

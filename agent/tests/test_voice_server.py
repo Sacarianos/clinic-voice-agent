@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from ehr import clinic_time
 from fakes import CallTool, RecordingTTS, RunLLMOnceGreeted, ScriptedCaller, ScriptedLLM, SilentSTT, TalkOver
-from scripts import handoff, spoken, verify
+from scripts import answer_read_back, handoff, spoken, verify
 from starlette.testclient import TestClient
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
@@ -185,6 +185,7 @@ def test_a_caller_verifies_and_books_over_the_phone_through_the_same_conversatio
                     CallTool("find_slots", {"provider": faraday.name, "from_date": day, "to_date": day}),
                     "Dr. Faraday has 9 AM that day, what is the visit for?",
                     CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
+                    answer_read_back("yes"),
                     CallTool("book_appointment"),
                 ]
             ),
@@ -212,7 +213,7 @@ def test_a_caller_verifies_and_books_over_the_phone_through_the_same_conversatio
     assert heard.index(read_back) < heard.index("You're all booked")
 
 
-def test_a_caller_who_says_yes_over_the_read_back_hears_it_again_and_can_still_book(ehr, ehr_adapter_url):
+def test_a_caller_who_says_yes_over_the_read_back_is_asked_again_and_can_still_book(ehr, ehr_adapter_url):
     born = ehr.unused_birth_date()
     patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
     faraday = ehr.create_provider(given="Imogen", family="Faraday")
@@ -243,8 +244,9 @@ def test_a_caller_who_says_yes_over_the_read_back_hears_it_again_and_can_still_b
                     CallTool("find_slots", {"provider": faraday.name, "from_date": day, "to_date": day}),
                     "Dr. Faraday has 9 AM that day, what is the visit for?",
                     CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
-                    # The Caller cut the Read-back off, so the agent reads it back again.
-                    CallTool("choose_slot", {"slot_id": nine_slot, "visit_type": "annual_physical"}),
+                    # The Caller cut the Read-back off, so the agent asks again before recording a yes.
+                    "Sorry, I talked over you. Is 9 AM with Dr. Faraday for your annual physical right?",
+                    answer_read_back("yes"),
                     CallTool("book_appointment"),
                 ]
             ),
@@ -263,8 +265,8 @@ def test_a_caller_who_says_yes_over_the_read_back_hears_it_again_and_can_still_b
 
     assert caller.lines == []
     assert appointment["slot"] == [{"reference": f"Slot/{nine_slot}"}]
-    read_backs = [line for line in tts.spoken if line.startswith("Just to confirm")]
-    assert len(read_backs) == 2
+    heard = " ".join(sentence.strip() for sentence in tts.spoken)
+    assert heard.index("Just to confirm") < heard.index("Sorry, I talked over you") < heard.index("You're all booked")
 
 
 def _wait_for(found, what, seconds=10):
