@@ -13,30 +13,25 @@ from clinic_agent.config import ConfigError, require
 DEFAULT_LLM_CONFIG = "haiku"
 
 
-class _NoAsyncToolGuidance:
+class AnthropicLLMWithoutAsyncToolGuidance(AnthropicLLMService):
     """Keeps Pipecat's async-tool guidance out of the system prompt.
 
     Pipecat counts every tool that isn't cancelled on interruption as async, and then tells the model that
     tool results arrive in a later turn. Ours never do. handoff, emergency_redirect and the writes run to the
     end so a Caller talking over them can't cut them off, and each one moves the flow to its next node. With
     the guidance in, Haiku 5.5 talked before calling handoff on most calls, where it should say nothing.
+
+    Only Haiku 5.5 uses it. Without the guidance, Haiku 4.5 often answered a node's task text as if the
+    Caller had said it ("I understand, I'm ready to help callers") and skipped get_clinic_info.
     """
 
     def _has_async_tools(self) -> bool:
         return False
 
 
-class ClinicAnthropicLLM(_NoAsyncToolGuidance, AnthropicLLMService):
-    pass
-
-
-class ClinicOpenRouterLLM(_NoAsyncToolGuidance, OpenRouterLLMService):
-    pass
-
-
 @dataclass(frozen=True)
 class LLMConfig:
-    service: type[ClinicAnthropicLLM] | type[ClinicOpenRouterLLM]
+    service: type[AnthropicLLMService] | type[OpenRouterLLMService]
     model: str
     api_key_env: str
     settings: Mapping[str, Any] = field(default_factory=dict)
@@ -51,10 +46,12 @@ class LLMConfig:
 HAIKU_5_5_VOICE_SETTINGS = {"thinking": AnthropicLLMService.ThinkingConfig(type="disabled")}
 
 LLM_CONFIGS = {
-    "haiku": LLMConfig(ClinicAnthropicLLM, "claude-haiku-5-5", "ANTHROPIC_API_KEY", HAIKU_5_5_VOICE_SETTINGS),
+    "haiku": LLMConfig(
+        AnthropicLLMWithoutAsyncToolGuidance, "claude-haiku-5-5", "ANTHROPIC_API_KEY", HAIKU_5_5_VOICE_SETTINGS
+    ),
     # The previous default, kept so #14 can compare the two. Haiku 4.5 does not think unless asked.
-    "haiku-4-5": LLMConfig(ClinicAnthropicLLM, "claude-haiku-4-5", "ANTHROPIC_API_KEY"),
-    "gemini": LLMConfig(ClinicOpenRouterLLM, "google/gemini-3.6-flash", "OPENROUTER_API_KEY"),
+    "haiku-4-5": LLMConfig(AnthropicLLMService, "claude-haiku-4-5", "ANTHROPIC_API_KEY"),
+    "gemini": LLMConfig(OpenRouterLLMService, "google/gemini-3.6-flash", "OPENROUTER_API_KEY"),
 }
 
 

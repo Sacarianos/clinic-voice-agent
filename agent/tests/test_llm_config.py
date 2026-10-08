@@ -70,18 +70,29 @@ async def test_haiku_5_5_requests_carry_no_sampling_parameters_it_would_reject()
     assert not {"temperature", "top_p", "top_k"} & sent
 
 
-@pytest.mark.parametrize("config", ["haiku", "haiku-4-5"])
-async def test_a_tool_that_survives_interruption_adds_nothing_to_the_system_prompt(config):
-    llm = create_llm({"LLM_CONFIG": config, "ANTHROPIC_API_KEY": "placeholder"}, system_instruction=PROMPT)
-
+def tools_with_one_that_survives_interruption() -> ToolsSchema:
     @tool_options(cancel_on_interruption=False)
     async def handoff(params):
         pass
 
-    tools = ToolsSchema(standard_tools=[FunctionSchema("handoff", "End the call", {}, [], handler=handoff)])
-    request = await request_sent_to_anthropic(llm, tools)
+    return ToolsSchema(standard_tools=[FunctionSchema("handoff", "End the call", {}, [], handler=handoff)])
+
+
+async def test_haiku_5_5_gets_no_async_tool_guidance_for_a_tool_that_survives_interruption():
+    llm = create_llm({"ANTHROPIC_API_KEY": "placeholder"}, system_instruction=PROMPT)
+
+    request = await request_sent_to_anthropic(llm, tools_with_one_that_survives_interruption())
 
     assert request["system"] == PROMPT
+
+
+async def test_haiku_4_5_keeps_the_async_tool_guidance_it_was_tuned_with():
+    llm = create_llm({"LLM_CONFIG": "haiku-4-5", "ANTHROPIC_API_KEY": "placeholder"}, system_instruction=PROMPT)
+
+    request = await request_sent_to_anthropic(llm, tools_with_one_that_survives_interruption())
+
+    assert request["system"].startswith(PROMPT)
+    assert "ASYNC TOOLS" in request["system"]
 
 
 def test_gemini_config_uses_gemini_3_6_flash_through_openrouter():
