@@ -23,7 +23,7 @@ _Avoid_: doctor, practitioner
 ## Identity
 
 **Identity Verification**:
-Matching the caller's stated name and date of birth to exactly one patient. The date of birth must match exactly. The surname may match by sound, or with one wrong letter per five as long as the first letter is right, so ordinary speech recognition slips still match.
+Matching the caller's stated name and date of birth to exactly one patient. The date of birth must match exactly. The surname may match by sound, or with one wrong letter per five as long as the first letter is right, so ordinary speech recognition slips still match. When more than one patient matches, the caller is asked to spell the surname, and only that spelled attempt may pick the one whose surname it spells exactly. If it still matches more than one, the call ends in a Handoff.
 _Avoid_: authentication, login
 
 **Verified Patient**:
