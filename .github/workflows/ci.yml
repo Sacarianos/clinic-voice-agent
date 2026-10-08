@@ -40,3 +40,20 @@ jobs:
           FHIR_BASE_URL: http://localhost:8080/fhir
       - name: Build the adapter image
         run: docker build --tag clinic-ehr-adapter .
+
+  agent:
+    name: Voice agent
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v7
+      # setup-uv publishes no floating v10 tag, so pin the v10.2.0 commit.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          enable-cache: true
+          cache-dependency-glob: agent/uv.lock
+      - run: uv sync --frozen
+      # Fakes stand in for Deepgram and the LLM, so no API keys are needed.
+      - run: uv run pytest
