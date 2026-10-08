@@ -126,7 +126,7 @@ A Handoff files a Callback Request through the adapter and tells the Caller staf
 
 The number a Callback Request calls back is the call's caller ID. On a phone call that is Twilio's `From`: `/voice` passes it to the media stream as a `from_number` stream parameter. A browser call has none, so the agent asks for one when it needs it. In a Handoff it asks before filing, reads the number back, and files only after the Caller says it is right; a no asks again. In an Emergency Redirect the 911 line always comes first. Only then does the agent ask, if the Caller can, for a number where staff can reach them later, and it files that number as soon as it hears it, with no read-back, so nobody in an emergency is kept on the line. A Caller who hangs up instead gets no Callback Request. Nothing is ever filed with a made-up number. The callback number is never used to verify anyone.
 
-You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 4.5 and `ANTHROPIC_API_KEY`. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. With both Langfuse keys set, every call is traced to Langfuse Cloud. Twilio is optional: the phone routes are on only when both `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are set, and the server refuses to start with only one of them.
+You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku` (the default) uses Claude Haiku 5.5 with thinking off and `ANTHROPIC_API_KEY`. `LLM_CONFIG=haiku-4-5` uses Claude Haiku 4.5 with the same key. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. With both Langfuse keys set, every call is traced to Langfuse Cloud. Twilio is optional: the phone routes are on only when both `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are set, and the server refuses to start with only one of them.
 
 The server listens on `127.0.0.1:8765`. Set `PORT` to change it and `LOG_LEVEL=DEBUG` to see every frame.
 
@@ -210,7 +210,7 @@ async with start_call(["What is your full name and date of birth?", verify("Rosa
 
 ## Evals
 
-The eval harness in `evals/` runs whole calls through the same text transport as the conversation tests, with a real LLM config playing the agent and a second LLM, Claude Haiku 4.5, playing the Patient. Real runs cost money, so they never run in CI.
+The eval harness in `evals/` runs whole calls through the same text transport as the conversation tests, with a real LLM config playing the agent and a second LLM, Claude Haiku 4.5 whatever the agent runs, playing the Patient. Real runs cost money, so they never run in CI.
 
 Each scenario is a YAML file in `evals/scenarios/`: the Patient, the run's own Provider and Slots, any Appointments the Patient already holds, the Caller's goal and twist, and the expected end state. Slots are given as clinic weekdays after today and a time, so a scenario works on any day. The goal and twist can name a Slot, as `{late}` for its day and time or `{late_day}` for its day. There are ten:
 
@@ -248,7 +248,7 @@ The report has one column per LLM config:
 - Pass rate for every grader.
 - Per-turn latency, P50 and P95: from the Caller's line to the agent finishing its turn, tool time included. This is the wait until the agent stops talking, which is longer than a phone's wait for the first word.
 - Tool time, P50 and P95, across every tool call.
-- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 is priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`. A config without a price there shows tokens and `n/a`.
+- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`. A config without a price there shows tokens and `n/a`.
 
 `clinic-evals --report` prints the latest saved batch of each config side by side without running anything. Run each config once to compare them.
 
