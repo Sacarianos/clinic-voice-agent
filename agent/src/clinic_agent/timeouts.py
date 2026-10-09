@@ -5,7 +5,7 @@ the answer takes to arrive. A write then always comes back settled or unknown be
 stops waiting, and the agent never takes a write it gave up on for one that failed.
 """
 
-# The adapter's REQUEST_DEADLINE_MS (see adapter/src/config.ts). Its health check reports the value, and
+# The adapter's REQUEST_DEADLINE_MS, set in adapter/src/config.ts. Its health check reports the value, and
 # test_adapter_deadline fails when the two differ.
 ADAPTER_DEADLINE_SECS = 4.0
 

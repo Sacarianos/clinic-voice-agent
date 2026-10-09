@@ -3,7 +3,7 @@
 A phone's speech-to-text mishears numbers, weekdays, Provider names and surnames, and the agent has
 to cope. The simulated Caller types perfect text, so without this an eval run never tests that.
 Confusions come from `evals/confusions.yaml`. Each is tagged with its source, `hand-written` for the
-first list and something else (a call id, say) for an error heard on a real call, so those can be
+first list and something else, such as a call id, for an error heard on a real call, so those can be
 added later and told apart.
 """
 

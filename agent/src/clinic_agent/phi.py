@@ -12,7 +12,7 @@ Logs and trace exports pass everything they write through `PHI.mask`. It masks i
   masked when the agent or the Caller says it later in free text.
 - Dates with a year before this one are masked as dates of birth. Every Patient is an adult, and
   appointments are never in a past year, so scheduling dates stay readable in traces.
-- Phone numbers are masked by their shape: E.164 (URL-encoded too), US formats, and seven or more
+- Phone numbers are masked by their shape: E.164, URL-encoded too, US formats, and seven or more
   digits said as words.
 
 The mask is process-wide because logs and the trace exporter are. What it learns from one call stays

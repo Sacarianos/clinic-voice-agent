@@ -1,7 +1,7 @@
 """`clinic-evals --config haiku`: every scenario three times against a real LLM config, with a simulated Caller.
 `clinic-evals --report` prints the latest saved batch of each config side by side, without running anything.
 
-Needs the local EHR stack (FHIR_BASE_URL, EHR_ADAPTER_URL), ANTHROPIC_API_KEY for the simulated
+Needs the local EHR stack at FHIR_BASE_URL and EHR_ADAPTER_URL, ANTHROPIC_API_KEY for the simulated
 Caller, the agent's LLM key, and the Langfuse keys to push scores. Costs money: never run it in CI.
 """
 

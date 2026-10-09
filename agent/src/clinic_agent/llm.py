@@ -26,7 +26,7 @@ class AnthropicLLMWithoutAsyncToolGuidance(AnthropicLLMService):
     the guidance in, Haiku 5.5 talked before calling handoff on most calls, where it should say nothing.
 
     Only Haiku 5.5 uses it. Without the guidance, Haiku 4.5 often answered a node's task text as if the
-    Caller had said it ("I understand, I'm ready to help callers") and skipped get_clinic_info.
+    Caller had said it, with lines like "I understand, I'm ready to help callers", and skipped get_clinic_info.
     """
 
     def _has_async_tools(self) -> bool:
@@ -41,9 +41,9 @@ class LLMConfig:
     settings: Mapping[str, Any] = field(default_factory=dict)
 
 
-# Haiku 5.5 runs adaptive thinking when a request omits `thinking` (Haiku 4.5 never thinks unless asked), and
-# Pipecat 1.12 only switches thinking off for Sonnet 5 and later. Thinking costs 0.3 to 0.4 s of median time to
-# first output on a real turn (0.54 s disabled, 0.89 s adaptive at default effort), and a Caller waits through
+# Haiku 5.5 runs adaptive thinking when a request omits `thinking`, where Haiku 4.5 never thinks unless asked,
+# and Pipecat 1.12 only switches thinking off for Sonnet 5 and later. Thinking costs 0.3 to 0.4 s of median time
+# to first output on a real turn: 0.54 s disabled, 0.89 s adaptive at default effort. A Caller waits through
 # that silence. So the voice config turns it off. Haiku 5.5 accepts `disabled` at effort `high` or below; the
 # effort default is `medium`, which is fine. The Messages API also rejects non-default `temperature`, `top_p`
 # and `top_k` and `budget_tokens` on this model. Pipecat sends none of them unless a Setting names them.

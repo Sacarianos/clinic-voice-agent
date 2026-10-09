@@ -218,7 +218,7 @@ class _MarkerArrival(asyncio.Event):
 class _SpokenText(FrameProcessor):
     """Sits where TTS and the phone's audio output would be. Records each line the Caller would hear.
 
-    Lines the flow speaks itself (TTSSpeakFrame) reach the LLM context through TTS on the phone. Here
+    Lines the flow speaks itself, as TTSSpeakFrames, reach the LLM context through TTS on the phone. Here
     this pushes the frames a TTS would, so the context holds the same conversation in both.
     """
 

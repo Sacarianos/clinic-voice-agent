@@ -63,7 +63,7 @@ def build_call(
 class _KeepFlowActionsAlive(FrameProcessor):
     """Stops an interruption from wedging the conversation flow.
 
-    A node that speaks a line first (the greeting, a Read-back) gets its tools only once the frame that
+    A node that speaks a line first, such as the greeting or a Read-back, gets its tools only once the frame that
     follows the line reaches the end of the pipeline. An interruption drops that frame by default, so a
     Caller who talks over the line would leave the flow waiting forever, without the node's tools.
     """

@@ -23,7 +23,7 @@ UNUSED_EHR = EhrAdapter("http://127.0.0.1:9")
 TWILIO = TwilioAccount(account_sid="AC00000000000000000000000000000001", auth_token="test-auth-token")
 
 # What Twilio posts when a call comes in to https://clinic-agent.ngrok-free.app/voice, and the signature it
-# sends with it. Twilio's own RequestValidator (twilio-python 9.11.2) computed the signature with TWILIO's
+# sends with it. Twilio's own RequestValidator, from twilio-python 9.11.2, computed the signature with TWILIO's
 # auth token, so it doesn't depend on the server's code.
 NGROK_HOST = "clinic-agent.ngrok-free.app"
 INCOMING_CALL = {

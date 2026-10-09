@@ -1,7 +1,7 @@
 # What STT writes down when the Caller says `said`. The noise injector garbles Caller lines from this list.
 #
 # source says where an entry came from: `hand-written` for the first guesses below. When a real call
-# shows STT getting a word wrong, add the pair with its call id (for example `call-CA1234`), so the
+# shows STT getting a word wrong, add the pair with its call id, such as `call-CA1234`, so the
 # real errors can be told apart from the guesses.
 #
 # Several entries may share a `said`: the injector picks one of them each time it garbles that word.

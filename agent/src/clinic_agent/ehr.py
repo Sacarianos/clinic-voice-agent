@@ -56,7 +56,7 @@ class SlotSearch:
 class WriteOutcome:
     """What a write did. Only "succeeded" lets the agent tell the Caller it is done.
 
-    rejected: a business rule stopped it (reason says which) and nothing was written.
+    rejected: a business rule stopped it and nothing was written. reason says which rule.
     failed: nothing was written, so a retry with the same idempotency key is safe.
     unknown: it may or may not have been written. Read the EHR again before saying anything.
     """
@@ -66,8 +66,8 @@ class WriteOutcome:
 
 
 class EhrAdapter:
-    """audit_log records every write sent through this adapter (see writes.py). By default it is the file
-    AUDIT_LOG_PATH names.
+    """audit_log records every write sent through this adapter, as writes.py describes. By default it is the
+    file AUDIT_LOG_PATH names.
     """
 
     def __init__(self, base_url: str, audit_log: AuditLog | None = None):

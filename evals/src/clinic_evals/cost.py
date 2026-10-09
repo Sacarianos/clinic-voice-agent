@@ -16,7 +16,7 @@ class Price:
 
 
 # List prices. A config whose model isn't here reports tokens but no cost, rather than a guess.
-# Haiku 5.5 has a second rate card for prompts over 100K tokens ($0.50 / $2.50). A call here never gets near that.
+# Haiku 5.5 has a second rate card, $0.50 / $2.50, for prompts over 100K tokens. A call here never gets near that.
 # Gemini is OpenRouter's price, read from openrouter.ai/google/gemini-3.6-flash on 2026-10-09. That page lists no
 # cache rates, so cached tokens count at the full input rate, which can only overstate the cost.
 PRICES = {

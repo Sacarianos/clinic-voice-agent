@@ -18,7 +18,7 @@ export type VerifyPatientResult =
 
 export async function verifyPatient(fhir: FhirClient, request: VerifyPatientRequest): Promise<VerifyPatientResult> {
   const patients = await fhir.search<Patient>("Patient", { birthdate: request.dateOfBirth, _count: "100" });
-  // Surname matching is loose (Smith and Smyth match, so do Brennan and Brendan), so every Patient it finds
+  // Surname matching is loose: Smith and Smyth match, and so do Brennan and Brendan. So every Patient it finds
   // counts. Speech recognition can write down one Patient's exact name for the other.
   let candidates = patients.filter((patient) => matchingNames(patient, request).length > 0);
   if (request.familyNameSpelled) {

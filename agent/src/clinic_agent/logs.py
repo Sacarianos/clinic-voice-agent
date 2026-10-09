@@ -10,7 +10,7 @@ from clinic_agent.phi import PHI
 
 
 def configure_logging(level: str, sink: TextIO = sys.stderr) -> None:
-    """Sends loguru's records (Pipecat logs through loguru) and the standard library's to `sink`, masked.
+    """Sends loguru's records, Pipecat's among them, and the standard library's to `sink`, masked.
 
     Masking runs on the whole formatted line, exception traceback included. Tracebacks never show local
     variables' values, which can hold a Caller's words.
@@ -28,7 +28,7 @@ def configure_logging(level: str, sink: TextIO = sys.stderr) -> None:
 
 
 class _ToLoguru(logging.Handler):
-    """Hands standard library records (httpx, uvicorn, OpenTelemetry) to loguru, so they are masked too."""
+    """Hands standard library records, such as httpx's, uvicorn's and OpenTelemetry's, to loguru to be masked too."""
 
     def emit(self, record: logging.LogRecord) -> None:
         try:

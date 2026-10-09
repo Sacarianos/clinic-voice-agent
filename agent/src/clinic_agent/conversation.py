@@ -107,7 +107,7 @@ Feeling unwell and wanting to be seen is a booking, usually a sick visit.
 async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str | None) -> FlowManager:
     """Greet the Caller and wait in Identity Verification. Call once the pipeline is running.
 
-    caller_phone is the call's caller ID, None when it has none (a browser call). It is where a Callback
+    caller_phone is the call's caller ID, None when it has none, as on a browser call. It is where a Callback
     Request calls back, and without it a Handoff asks the Caller for a number. It never verifies anyone.
     """
     flow = FlowManager(
@@ -141,7 +141,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         if not caller_is_the_patient:
             # A Proxy Caller's details are someone else's. They never reach the EHR, so no record is verified or linked.
             return {"status": "proxy_caller"}, await handoff(ehr, flow_manager, HANDOFF_REASONS["proxy_caller"])
-        # The flow, not the LLM, knows a spelling request came before this attempt (ADR 0003).
+        # The flow knows a spelling request came before this attempt, and the LLM can't claim one. See ADR 0003.
         spelled = flow_manager.state.pop("spelling_requested", False)
         verification = await ehr.verify_patient(
             given_name=args["given_name"],

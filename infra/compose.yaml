@@ -1,8 +1,8 @@
 name: clinic-voice-agent
 
 services:
-  # The HAPI image is distroless and runs as uid 65532, so a fresh named volume
-  # (owned by root) must be handed over before HAPI can open its H2 file.
+  # The HAPI image is distroless and runs as uid 65532. A fresh named volume is owned by root, so it
+  # must be handed over before HAPI can open its H2 file.
   hapi-volume-init:
     image: busybox:1.37
     command: ["chown", "65532:65532", "/data/h2"]

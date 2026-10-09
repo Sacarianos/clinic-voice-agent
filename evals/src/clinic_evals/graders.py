@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from clinic_agent.booking import spoken_time
 from clinic_evals.record import RunRecord
 
-# The tools a Caller can reach before Identity Verification (ADR 0003). None of them reads a Patient's record.
+# The tools a Caller can reach before Identity Verification, per ADR 0003. None of them reads a Patient's record.
 BEFORE_VERIFICATION_TOOLS = {"verify_patient", "handoff", "emergency_redirect", "get_clinic_info"}
 NOT_AVAILABLE = "is not currently available"
 

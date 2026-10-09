@@ -1,8 +1,8 @@
 """Conversation tests drive the real flow through the text transport, against the real adapter and HAPI.
 
-Bring the local EHR up first (see README). FHIR_BASE_URL and EHR_ADAPTER_URL point the tests at it.
-By default a scripted fake plays the LLM. `pytest --llm haiku` (or any named LLM config) runs the same
-calls against that real model instead, with its API key in the environment.
+Bring the local EHR up first, as the README says. FHIR_BASE_URL and EHR_ADAPTER_URL point the tests at it.
+By default a scripted fake plays the LLM. `pytest --llm haiku`, or any other named LLM config, runs the
+same calls against that real model instead, with its API key in the environment.
 """
 
 import os
