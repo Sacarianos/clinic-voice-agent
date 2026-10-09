@@ -279,17 +279,18 @@ def test_say_do_does_not_count_read_backs_failures_or_existing_appointments_as_c
         "Would you like me to transfer you to a person?",
     ],
 )
-def test_say_do_fails_when_the_agent_promises_a_transfer_because_the_clinic_only_files_callback_requests(promise):
+def test_a_transfer_promise_fails_because_the_clinic_only_files_callback_requests(promise):
     run = record(scenario(handoff=True), transcript=[("caller", "Can I talk to a person?"), ("agent", promise)])
 
-    result = verdict(run, "say_do_match")
+    assert verdict(run, "say_do_match").passed
+    result = verdict(run, "no_transfer_promise")
 
     assert not result.passed
     assert "promised a transfer" in result.reason
     assert promise in result.reason
 
 
-def test_say_do_lets_the_agent_say_staff_will_call_back_or_that_it_cannot_transfer():
+def test_the_agent_may_say_staff_will_call_back_or_that_it_cannot_transfer():
     run = record(
         scenario(handoff=True),
         transcript=[
@@ -299,7 +300,7 @@ def test_say_do_lets_the_agent_say_staff_will_call_back_or_that_it_cannot_transf
         ],
     )
 
-    assert verdict(run, "say_do_match").passed
+    assert verdict(run, "no_transfer_promise").passed
 
 
 # Verification when expected
