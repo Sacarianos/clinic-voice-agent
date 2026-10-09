@@ -250,7 +250,7 @@ The report has one column per LLM config:
 - Pass rate for every grader.
 - Per-turn latency, P50 and P95: from the Caller's line to the agent finishing its turn, tool time included. This is the wait until the agent stops talking, which is longer than a phone's wait for the first word.
 - Tool time, P50 and P95, across every tool call.
-- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`. A config without a price there shows tokens and `n/a`.
+- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`, and Gemini from OpenRouter's, with its cached tokens at the full input rate since OpenRouter lists no cache rates. A config without a price there shows tokens and `n/a`.
 
 `clinic-evals --report` prints the latest saved batch of each config side by side without running anything. Run each config once to compare them.
 

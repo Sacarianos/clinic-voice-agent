@@ -33,6 +33,13 @@ def test_haiku_5_5_cost_uses_its_own_cheaper_rates_for_prompts_up_to_100k_tokens
     assert call_cost("claude-haiku-5-5", usage) == pytest.approx(0.0018)
 
 
+def test_gemini_cost_charges_cached_tokens_at_the_full_input_rate():
+    usage = TokenUsage(input_tokens=10_000, output_tokens=1_000, cache_read_tokens=5_000, cache_write_tokens=2_000)
+
+    # 17k input-priced tokens at $0.75 and 1k output at $3.75, per million.
+    assert call_cost("google/gemini-3.6-flash", usage) == pytest.approx(0.01650)
+
+
 def test_a_model_without_a_known_price_has_no_cost():
     assert call_cost("some-new-model", TokenUsage(input_tokens=1_000)) is None
     assert call_cost(None, TokenUsage(input_tokens=1_000)) is None
