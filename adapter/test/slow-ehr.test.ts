@@ -22,6 +22,15 @@ const DEADLINE_MS = 2_000;
 // Time for the answer to reach the test once the adapter has it.
 const ANSWER_SLACK_MS = 500;
 
+test("the health check reports the deadline, so the agent can check it waits long enough", async () => {
+  const adapter = await startAdapter({ requestDeadlineMs: 4_321 });
+  try {
+    expect((await adapter.get("/healthz")).body).toEqual({ ok: true, requestDeadlineMs: 4_321 });
+  } finally {
+    await adapter.close();
+  }
+});
+
 let patientId: string;
 let provider: TestProvider;
 beforeAll(async () => {

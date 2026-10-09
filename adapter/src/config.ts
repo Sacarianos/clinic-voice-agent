@@ -5,7 +5,8 @@ const configSchema = z.object({
   PORT: z.coerce.number().int().min(0).default(3000),
   FHIR_BASE_URL: z.url().transform((url) => url.replace(/\/+$/, "")),
   // The agent counts on it (ADAPTER_DEADLINE_SECS in its timeouts module) and waits a little longer
-  // than this, so it always hears an outcome before it stops waiting.
+  // than this, so it always hears an outcome before it stops waiting. /healthz reports it, and the
+  // agent's tests fail when the two differ.
   REQUEST_DEADLINE_MS: z.coerce.number().int().min(1).default(4000),
   // For testing only: a fault every request meets (see faults.ts).
   INJECT_FAULT: z.preprocess((value) => (value === "" ? undefined : value), z.enum(FAULTS).optional()),

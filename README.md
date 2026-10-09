@@ -70,7 +70,7 @@ Every write answers 200 with one of four outcomes, and the agent acts on each di
 - `{ "outcome": "failed" }`: nothing was written, so a retry with the same key is safe.
 - `{ "outcome": "unknown" }`: the request reached HAPI but no answer came back. Read the EHR again before telling the Caller anything.
 
-The adapter answers every request within `REQUEST_DEADLINE_MS` (4000 unless set), every FHIR call it makes included. A slow EHR fails a read, and fails a write or turns it `unknown`, instead of holding the call. The agent counts on this deadline (`ADAPTER_DEADLINE_SECS` in its `timeouts` module) and waits a second longer, so change both together.
+The adapter answers every request within `REQUEST_DEADLINE_MS` (4000 unless set), every FHIR call it makes included. A slow EHR fails a read, and fails a write or turns it `unknown`, instead of holding the call. The agent counts on this deadline (`ADAPTER_DEADLINE_SECS` in its `timeouts` module) and waits a second longer. `GET /healthz` reports it as `requestDeadlineMs`, and an agent test fails when the two differ.
 
 A write that lands only in part is safe and can be finished. Each write takes its new Slot before pointing an Appointment at it, and ends an Appointment before freeing its Slot, so a half-applied write never leaves a booked Appointment in a free Slot. A Slot a write takes records the write's idempotency key, so the same write sent again treats that busy Slot as its own and completes. Cancelling again frees a Slot still held for the cancelled Appointment.
 

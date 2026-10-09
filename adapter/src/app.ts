@@ -16,7 +16,7 @@ export function createApp(config: Config) {
   return new Hono()
     .use(answerWithin(config.requestDeadlineMs))
     .use(injectFaults(config.injectFault))
-    .get("/healthz", (c) => c.json({ ok: true }))
+    .get("/healthz", (c) => c.json({ ok: true, requestDeadlineMs: config.requestDeadlineMs }))
     .route("/patients", patientRoutes(fhir))
     .route("/callback-requests", callbackRequestRoutes(fhir))
     .route("/providers", providerRoutes(fhir))
