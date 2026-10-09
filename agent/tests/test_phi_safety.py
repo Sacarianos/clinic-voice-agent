@@ -140,7 +140,7 @@ async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_pa
         assert call.ended
 
     traces = exported_traces(langfuse, call.conversation_id)
-    assert "Dr. Imogen Faraday" in traces  # the conversation is in the trace, with patient data masked
+    assert faraday.name in traces  # the conversation is in the trace, with patient data masked
     assert found_phi(patient, traces) == []
     assert found_phi(patient, logs.getvalue()) == []
 
@@ -196,7 +196,7 @@ async def test_rescheduling_and_cancelling_through_injected_faults_leaves_no_pat
         assert call.ended
 
     traces = exported_traces(langfuse, call.conversation_id)
-    assert "Dr. Imogen Faraday" in traces
+    assert faraday.name in traces
     assert found_phi(patient, traces) == []
     assert found_phi(patient, logs.getvalue()) == []
 
@@ -250,7 +250,7 @@ def test_a_phone_call_that_verifies_and_books_leaves_no_patient_data_in_logs_or_
         ehr.delete_callback_requests_from(patient.phone)
 
     traces = exported_traces(langfuse, call_sid)
-    assert "Dr. Imogen Faraday" in traces
+    assert faraday.name in traces
     assert found_phi(patient, traces) == []
     assert found_phi(patient, logs.getvalue()) == []
 

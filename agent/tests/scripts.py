@@ -1,8 +1,14 @@
 """Building blocks for scripted calls: what the Caller says and what the fake LLM does."""
 
+import random
 from datetime import date
 
 from fakes import CallTool
+
+
+def unused_phone() -> str:
+    """A phone number of the test's own, so tests running at the same time never find each other's Callback Requests."""
+    return f"+1555{random.randrange(10**7):07d}"
 
 
 def spoken(iso_date: str) -> str:
@@ -29,6 +35,16 @@ def handoff(reason: str) -> CallTool:
 
 def emergency_redirect() -> CallTool:
     return CallTool("emergency_redirect")
+
+
+def give_number(digits: str) -> CallTool:
+    """The LLM records the callback number the Caller said, on a call without caller ID."""
+    return CallTool("record_callback_number", {"phone_number": digits})
+
+
+def confirm_number(correct: bool) -> CallTool:
+    """The LLM records whether the Caller said the number read back to them is right."""
+    return CallTool("confirm_callback_number", {"correct": correct})
 
 
 def answer_read_back(answer: str) -> CallTool:

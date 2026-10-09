@@ -2,7 +2,7 @@
 
 Logs and trace exports pass everything they write through `PHI.mask`. It masks in four ways:
 
-- What the Caller says before Identity Verification succeeds is masked whole. Until then there is no
+- What the Caller says, or types on the browser page, before Identity Verification succeeds is masked whole. Until then there is no
   telling which words are a name, so every utterance is a phrase to mask wherever it shows up later:
   in the LLM context, in an STT span, or in a tool call.
 - Values under keys that hold a name, date of birth or phone number (`given_name`, `birthDate`,
@@ -29,6 +29,7 @@ from pipecat.frames.frames import (
     FunctionCallInProgressFrame,
     FunctionCallResultFrame,
     InterimTranscriptionFrame,
+    LLMMessagesAppendFrame,
     TranscriptionFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
@@ -201,12 +202,27 @@ class PhiRedactionProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame)) and not self._verified:
             PHI.learn_unverified_speech(frame.text)
+        elif isinstance(frame, LLMMessagesAppendFrame) and not self._verified:
+            # A line typed on the browser page reaches the LLM as a user message, not a transcript.
+            for message in frame.messages:
+                if isinstance(message, dict) and message.get("role") == "user":
+                    for text in _texts(message.get("content")):
+                        PHI.learn_unverified_speech(text)
         elif isinstance(frame, FunctionCallInProgressFrame):
             PHI.mask_data(frame.arguments)
         elif isinstance(frame, FunctionCallResultFrame) and frame.function_name == "verify_patient":
             result = frame.result if isinstance(frame.result, dict) else {}
             self._verified = self._verified or result.get("status") == "verified"
         await self.push_frame(frame, direction)
+
+
+def _texts(content: Any) -> list[str]:
+    """The text of a chat message's content: a plain string, or the text parts of a list of parts."""
+    if isinstance(content, str):
+        return [content]
+    if isinstance(content, list):
+        return [part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)]
+    return []
 
 
 def _placeholder_for(key: Any, inherited: str | None) -> str | None:

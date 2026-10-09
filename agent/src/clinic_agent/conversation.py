@@ -11,9 +11,15 @@ from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
 from clinic_agent.clinic import clinic_info_tool
 from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import FILING_ATTEMPTS, HANDOFF_REASONS, HandoffReason, escalation_tools, handoff
+from clinic_agent.escalation import (
+    FILING_ATTEMPTS,
+    HANDOFF_REASONS,
+    HandoffReason,
+    escalation_tools,
+    handoff,
+    set_callback_number,
+)
 from clinic_agent.holding import with_holding_line
-from clinic_agent.phi import PHI, PHONE
 from clinic_agent.pipeline import Call
 from clinic_agent.timeouts import tool_timeout
 
@@ -27,7 +33,7 @@ You are on a live phone call. Everything you write is spoken aloud by a voice, s
 - Be warm, calm and plain-spoken.
 Never give medical advice. If the caller mentions an emergency at any point, call emergency_redirect at once.
 If they ask for a person, call for someone else, are not a patient yet, or ask a clinical question, call handoff.
-The clinic never transfers or connects calls. Handoff means staff call the caller back later at the number they are calling from.
+The clinic never transfers or connects calls. Handoff means staff call the caller back later at the number they are calling from, or at one they give when the call shows none.
 Call handoff without saying anything first, because the tool says the goodbye. Never say you will transfer, connect or put the caller through to anyone, and never ask them to hold.
 A clinical question asks for medical advice: what a symptom means, what to take or stop taking, test
 results, or how to treat something. A caller who feels unwell and wants to be seen is not asking that.
@@ -97,10 +103,11 @@ Feeling unwell and wanting to be seen is a booking, usually a sick visit.
 """
 
 
-async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str) -> FlowManager:
+async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str | None) -> FlowManager:
     """Greet the Caller and wait in Identity Verification. Call once the pipeline is running.
 
-    The phone number is where a Callback Request calls back. It is never used to verify anyone.
+    caller_phone is the call's caller ID, None when it has none (a browser call). It is where a Callback
+    Request calls back, and without it a Handoff asks the Caller for a number. It never verifies anyone.
     """
     flow = FlowManager(
         llm=call.llm,
@@ -108,8 +115,8 @@ async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str) -> 
         worker=call.worker,
         global_functions=[*escalation_tools(ehr), clinic_info_tool()],
     )
-    flow.state["caller_phone"] = caller_phone
-    PHI.learn(caller_phone, PHONE)
+    if caller_phone:
+        set_callback_number(flow, caller_phone)
     await flow.initialize(_verify_identity_node(GREETING, ehr))
     return flow
 

@@ -66,11 +66,15 @@ Ending the automated conversation and creating a Callback Request so clinic staf
 _Avoid_: transfer, escalation
 
 **Callback Request**:
-A record asking clinic staff to call a caller back, with the reason.
+A record asking clinic staff to call a caller back, with the reason and the Callback Number.
 _Avoid_: ticket, follow-up task
 
+**Callback Number**:
+The phone number a Callback Request calls back: the call's caller ID, or, on a call without one such as a browser call, a number the caller gives. It never verifies anyone.
+_Avoid_: caller phone, contact number
+
 **Emergency Redirect**:
-Telling the caller to hang up and dial 911, then ending the call and filing a Callback Request marked as an emergency. The caller never waits on the line for staff.
+Telling the caller to hang up and dial 911, then ending the call and filing a Callback Request marked as an emergency. The caller never waits on the line for staff. On a call without caller ID, the agent asks for a Callback Number only after the 911 line, and only if the caller can give one.
 
 **Clinic Question**:
 A question about the clinic itself: hours, address, parking, or which provider does what. Clinical questions are not Clinic Questions and always get a Handoff.
