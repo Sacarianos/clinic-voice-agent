@@ -3,6 +3,7 @@
 Conversation tests and the eval harness's own tests use it to drive the real flow with no API key.
 """
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 
@@ -39,9 +40,16 @@ class ScriptedLLM(LLMService):
 
     Like a real LLM service, it logs the context it was given at DEBUG level and traces each run as an
     `llm` span holding the context and its reply, so logs and traces carry what they would on a real call.
+    It also reports each run's time to first token, which is first_token_after_secs plus a moment.
     """
 
-    def __init__(self, steps: list[str | CallTool | list[CallTool]], *, usage: LLMTokenUsage | None = None):
+    def __init__(
+        self,
+        steps: list[str | CallTool | list[CallTool]],
+        *,
+        usage: LLMTokenUsage | None = None,
+        first_token_after_secs: float = 0,
+    ):
         super().__init__(
             run_in_parallel=RUN_TOOLS_IN_PARALLEL,
             settings=LLMSettings(
@@ -60,6 +68,7 @@ class ScriptedLLM(LLMService):
         )
         self.steps = list(steps)
         self._usage = usage  # what each run reports as its token usage, when set
+        self._first_token_after_secs = first_token_after_secs
 
     def can_generate_metrics(self) -> bool:
         return True
@@ -76,6 +85,9 @@ class ScriptedLLM(LLMService):
         logger.debug(f"{self}: Generating chat from context {self.get_llm_adapter().get_messages_for_logging(context)}")
         step = self.steps.pop(0) if self.steps else "(script exhausted)"
         await self.push_frame(LLMFullResponseStartFrame())
+        await self.start_ttfb_metrics()
+        await asyncio.sleep(self._first_token_after_secs)
+        await self.stop_ttfb_metrics()
         if isinstance(step, CallTool):
             step = [step]
         if isinstance(step, list):

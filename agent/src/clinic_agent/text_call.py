@@ -32,7 +32,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
     TTSTextFrame,
 )
-from pipecat.metrics.metrics import LLMTokenUsage, LLMUsageMetricsData
+from pipecat.metrics.metrics import LLMTokenUsage, LLMUsageMetricsData, TTFBMetricsData
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.pipeline.worker import PipelineParams
 from pipecat.processors.aggregators.llm_response_universal import LLMUserAggregatorParams
@@ -82,6 +82,7 @@ class TextCall:
         self.tool_calls: list[ToolCall] = []
         self.offered_tools: list[list[str]] = []  # tool names the LLM was offered, one list per LLM run
         self.llm_usage: list[LLMTokenUsage] = []  # what each LLM run used, as the LLM service reports it
+        self.llm_ttfb_secs: list[float] = []  # each LLM run's time to first token, as the LLM service reports it
         self._ehr = ehr
         self._reply_timeout_secs = reply_timeout_secs
         self._speech = _SpokenText(self.transcript)
@@ -91,7 +92,8 @@ class TextCall:
             hear=[],
             speak=[self._speech],
             user_params=LLMUserAggregatorParams(user_turn_strategies=ExternalUserTurnStrategies()),
-            params=PipelineParams(enable_usage_metrics=True),
+            # No initial empty metrics: they would read as an LLM run with no time to first token.
+            params=PipelineParams(enable_metrics=True, enable_usage_metrics=True, send_initial_empty_metrics=False),
             idle_timeout_secs=None,
             enable_rtvi=False,
             observers=[self._watch],
@@ -306,3 +308,4 @@ class _TurnWatch(BaseObserver):
             self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result, position, took))
         elif isinstance(frame, MetricsFrame) and from_llm:
             self._call.llm_usage += [data.value for data in frame.data if isinstance(data, LLMUsageMetricsData)]
+            self._call.llm_ttfb_secs += [data.value for data in frame.data if isinstance(data, TTFBMetricsData)]

@@ -45,7 +45,7 @@ def test_a_model_without_a_known_price_has_no_cost():
     assert call_cost(None, TokenUsage(input_tokens=1_000)) is None
 
 
-def run(*, failed=(), turns=(), tools=(), usage=None, error=None):
+def run(*, failed=(), turns=(), first_tokens=(), tools=(), usage=None, error=None):
     return {
         "scenario": "plain_book",
         "repeat": 1,
@@ -53,6 +53,7 @@ def run(*, failed=(), turns=(), tools=(), usage=None, error=None):
         "error": error,
         "grades": [{"grader": name, "passed": name not in failed, "reason": "because" if name in failed else None} for name in GRADERS],
         "turn_secs": list(turns),
+        "llm_ttfb_secs": list(first_tokens),
         "tool_calls": [{"name": name, "arguments": {}, "result": {}, "duration_secs": secs} for name, secs in tools],
         "usage": usage or {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0},
         "noise": [],
@@ -74,8 +75,8 @@ HAIKU = batch(
     "haiku",
     "claude-haiku-4-5",
     [
-        run(turns=[1, 2], tools=[("verify_patient", 0.1)], usage={"input_tokens": 10_000, "output_tokens": 1_000, "cache_read_tokens": 0, "cache_write_tokens": 0}),
-        run(failed=["say_do_match"], turns=[3, 5], tools=[("find_slots", 0.3)], usage={"input_tokens": 20_000, "output_tokens": 2_000, "cache_read_tokens": 0, "cache_write_tokens": 0}),
+        run(turns=[1, 2], first_tokens=[0.4, 0.8], tools=[("verify_patient", 0.1)], usage={"input_tokens": 10_000, "output_tokens": 1_000, "cache_read_tokens": 0, "cache_write_tokens": 0}),
+        run(failed=["say_do_match"], turns=[3, 5], first_tokens=[0.5, 0.8], tools=[("find_slots", 0.3)], usage={"input_tokens": 20_000, "output_tokens": 2_000, "cache_read_tokens": 0, "cache_write_tokens": 0}),
     ],
 )
 OTHER = batch("gemini", "google/some-model", [run(turns=[10]), run(turns=[20]), run(turns=[30])])
@@ -101,6 +102,7 @@ def test_the_report_shows_turn_latency_tool_time_and_cost_per_call_with_cost_unk
     report = format_report([HAIKU, OTHER])
 
     assert row(report, "turn latency P50 / P95") == ["2.5 s / 4.7 s", "20.0 s / 29.0 s"]
+    assert row(report, "LLM time to first token P50 / P95") == ["0.65 s / 0.80 s", "n/a"]
     assert row(report, "tool time P50 / P95") == ["0.20 s / 0.29 s", "n/a"]
     # 15k input and 1.5k output tokens a call on average, at $1 and $5 per million.
     assert row(report, "cost per call") == ["$0.0225", "n/a"]

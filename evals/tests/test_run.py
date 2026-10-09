@@ -149,7 +149,9 @@ async def test_a_run_without_noise_records_none(ehr_urls):
     assert run.noise == []
 
 
-async def test_a_run_records_each_turns_latency_the_tools_time_and_the_agents_tokens(ehr_urls):
+async def test_a_run_records_each_turns_latency_the_llms_time_to_first_token_the_tools_time_and_the_agents_tokens(
+    ehr_urls,
+):
     scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
     per_llm_run = LLMTokenUsage(
         prompt_tokens=1000, completion_tokens=20, cache_read_input_tokens=300, cache_creation_input_tokens=50, total_tokens=1370
@@ -158,11 +160,15 @@ async def test_a_run_records_each_turns_latency_the_tools_time_and_the_agents_to
     run = await run_scenario(
         scenario,
         *ehr_urls,
-        agent=lambda seeded: ScriptedLLM([CallTool("handoff", {"reason": "asked_for_person"})], usage=per_llm_run),
+        agent=lambda seeded: ScriptedLLM(
+            [CallTool("handoff", {"reason": "asked_for_person"})], usage=per_llm_run, first_token_after_secs=0.2
+        ),
         caller=lambda scenario, seeded: ScriptedCaller(["Let me talk to a person."]),
     )
 
     [turn] = run.turn_secs
+    [first_token] = run.llm_ttfb_secs
     [handoff_call] = run.tool_calls
+    assert 0.2 <= first_token < turn
     assert 0 < handoff_call.duration_secs <= turn
     assert run.usage == TokenUsage(input_tokens=1000, output_tokens=20, cache_read_tokens=300, cache_write_tokens=50)
