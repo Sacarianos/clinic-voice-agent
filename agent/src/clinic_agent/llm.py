@@ -12,6 +12,10 @@ from clinic_agent.config import ConfigError, require
 
 DEFAULT_LLM_CONFIG = "haiku"
 
+# Tools a reply calls together run one after another, in the order the model wrote them. So a verification
+# finishes before a Handoff in the same reply files its Callback Request, and links the Verified Patient.
+RUN_TOOLS_IN_PARALLEL = False
+
 
 class AnthropicLLMWithoutAsyncToolGuidance(AnthropicLLMService):
     """Keeps Pipecat's async-tool guidance out of the system prompt.
@@ -67,4 +71,5 @@ def create_llm(env: Mapping[str, str], *, system_instruction: str) -> LLMService
         settings=config.service.Settings(
             model=config.model, system_instruction=system_instruction, **config.settings
         ),
+        run_in_parallel=RUN_TOOLS_IN_PARALLEL,
     )

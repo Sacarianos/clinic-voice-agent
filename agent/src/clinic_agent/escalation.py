@@ -20,7 +20,7 @@ from pipecat.frames.frames import TTSSpeakFrame
 
 from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter
-from clinic_agent.holding import with_holding_line
+from clinic_agent.holding import Handler, with_holding_line
 from clinic_agent.phi import PHI, PHONE
 from clinic_agent.timeouts import tool_timeout
 
@@ -112,9 +112,10 @@ async def handoff(ehr: EhrAdapter, flow_manager: FlowManager, reason: HandoffRea
     Without a number to call back, it returns the node that asks for one and files once it is confirmed.
     """
     if "callback_number" not in flow_manager.state:
-        return _callback_number_node(ehr, reason, ASK_FOR_CALLBACK_NUMBER)
+        return _ending_at(flow_manager, _callback_number_node(ehr, reason, ASK_FOR_CALLBACK_NUMBER))
     filed = await _file_callback_request(ehr, flow_manager, reason.filed_as, emergency=False)
-    return _closing_node("handoff", reason.told_to_caller if filed else COULD_NOT_FILE_CALLBACK_REQUEST)
+    goodbye = reason.told_to_caller if filed else COULD_NOT_FILE_CALLBACK_REQUEST
+    return _ending_at(flow_manager, _closing_node("handoff", goodbye))
 
 
 async def emergency_redirect(ehr: EhrAdapter, flow_manager: FlowManager) -> NodeConfig:
@@ -124,9 +125,36 @@ async def emergency_redirect(ehr: EhrAdapter, flow_manager: FlowManager) -> Node
     """
     await flow_manager.worker.queue_frame(TTSSpeakFrame(EMERGENCY_REDIRECT))
     if "callback_number" not in flow_manager.state:
-        return _emergency_callback_number_node(ehr)
+        return _ending_at(flow_manager, _emergency_callback_number_node(ehr))
     await _file_callback_request(ehr, flow_manager, EMERGENCY_REASON, emergency=True)
-    return _closing_node("emergency_redirect", None)
+    return _ending_at(flow_manager, _closing_node("emergency_redirect", None))
+
+
+def unless_the_call_is_ending(handler: Handler) -> Handler:
+    """For every tool a node offers besides Handoff and Emergency Redirect.
+
+    A model can call several tools in one reply, and the last one to finish picks the next node. Once a
+    Handoff or Emergency Redirect has picked one, a tool called alongside it leads there too, so a
+    verification or a slot search in the same reply can't carry the call on. One that comes after the
+    Handoff doesn't run at all.
+    """
+
+    async def handle(args: dict, flow_manager: FlowManager):
+        if _ENDING_AT in flow_manager.state:
+            return {"status": "not_run", "reason": "the call is ending"}, flow_manager.state[_ENDING_AT]
+        result, next_node = await handler(args, flow_manager)
+        return result, flow_manager.state.get(_ENDING_AT, next_node)
+
+    return handle
+
+
+# The node a Handoff or Emergency Redirect leads to, once one has started.
+_ENDING_AT = "ending_at"
+
+
+def _ending_at(flow_manager: FlowManager, node: NodeConfig) -> NodeConfig:
+    flow_manager.state[_ENDING_AT] = node
+    return node
 
 
 def callback_number(said: str) -> str | None:

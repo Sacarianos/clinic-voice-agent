@@ -18,6 +18,7 @@ from clinic_agent.escalation import (
     escalation_tools,
     handoff,
     set_callback_number,
+    unless_the_call_is_ending,
 )
 from clinic_agent.holding import with_holding_line
 from clinic_agent.pipeline import Call
@@ -180,7 +181,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             },
         },
         required=["given_name", "family_name", "date_of_birth", "caller_is_the_patient"],
-        handler=with_holding_line(verify_patient),
+        handler=unless_the_call_is_ending(with_holding_line(verify_patient)),
         # A read: if the Caller talks over it, drop it rather than answer a question they moved past.
         cancel_on_interruption=True,
         # The verification, then either the Providers for the intent node or the Callback Request of a Handoff.

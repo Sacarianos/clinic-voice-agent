@@ -17,7 +17,7 @@ from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.audit import Write
 from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
-from clinic_agent.escalation import handoff
+from clinic_agent.escalation import handoff, unless_the_call_is_ending
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.timeouts import tool_timeout
@@ -100,7 +100,7 @@ class Booking:
                 "part_of_day": {"type": "string", "enum": ["morning", "afternoon"]},
             },
             required=[],
-            handler=with_holding_line(find_slots),
+            handler=unless_the_call_is_ending(with_holding_line(find_slots)),
             cancel_on_interruption=True,
             timeout_secs=tool_timeout(1),
         )
@@ -120,7 +120,7 @@ class Booking:
                 **self.choice_properties,
             },
             required=["slot_id", *self.choice_properties],
-            handler=choose_slot,
+            handler=unless_the_call_is_ending(choose_slot),
             cancel_on_interruption=True,
         )
 
@@ -168,7 +168,7 @@ class Booking:
             description="Book exactly what you read back, now that the caller has said yes to it.",
             properties={},
             required=[],
-            handler=with_holding_line(book_appointment),
+            handler=unless_the_call_is_ending(with_holding_line(book_appointment)),
             # A write must not be dropped halfway because the Caller spoke.
             cancel_on_interruption=False,
             timeout_secs=WRITE_TOOL_TIMEOUT_SECS,

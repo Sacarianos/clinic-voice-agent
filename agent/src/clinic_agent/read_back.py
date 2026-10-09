@@ -11,6 +11,8 @@ from collections.abc import Callable
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
+from clinic_agent.escalation import unless_the_call_is_ending
+
 ANSWERS = ("yes", "no", "change")
 
 READ_BACK_TASK = """\
@@ -55,7 +57,7 @@ def read_back_node(
         ),
         properties={"answer": {"type": "string", "enum": list(ANSWERS)}},
         required=["answer"],
-        handler=record_read_back_answer,
+        handler=unless_the_call_is_ending(record_read_back_answer),
         cancel_on_interruption=True,
     )
     return {
