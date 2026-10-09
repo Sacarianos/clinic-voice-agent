@@ -8,12 +8,11 @@ idempotency key made for that Read-back. A no or a change goes back to choosing.
 
 import uuid
 from dataclasses import dataclass
-from typing import ClassVar
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.audit import Write
-from clinic_agent.booking import VISIT_TYPES, Booking, Exits, spoken_appointment, spoken_time
+from clinic_agent.booking import VISIT_TYPES, Exits, SlotFinder, spoken_appointment, spoken_time
 from clinic_agent.callback_requests import handoff, unless_the_call_is_ending
 from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutcome
 from clinic_agent.holding import with_holding_line
@@ -111,7 +110,7 @@ class _Appointments:
             if appointment is None:
                 return _NOT_LISTED, None
             rescheduling = _Rescheduling(self.ehr, self.providers, self.exits, appointment)
-            return {"status": "chosen"}, rescheduling.find_slot_node()
+            return {"status": "chosen"}, rescheduling.finder.node()
 
         return FlowsFunctionSchema(
             name="choose_appointment_to_reschedule",
@@ -178,22 +177,26 @@ class _Appointments:
 
 
 @dataclass(frozen=True)
-class _Rescheduling(Booking):
+class _Rescheduling:
     """Find slot for a new time for an existing Appointment, then its own Read-back and write."""
 
+    ehr: EhrAdapter
+    providers: list[Provider]
+    exits: Exits
     appointment: Appointment
 
-    find_slot_task: ClassVar[str] = RESCHEDULE_FIND_SLOT_TASK
-    choose_slot_description: ClassVar[str] = (
-        "Pick the offered time the caller wants to move the appointment to, before reading it back."
-    )
-
     @property
-    def choice_properties(self) -> dict:
-        return {}
-
-    def chosen(self, slot: Slot, args: dict) -> tuple[dict, NodeConfig | None]:
-        return {"status": "chosen"}, self.reschedule_read_back_node(slot)
+    def finder(self) -> SlotFinder:
+        return SlotFinder(
+            self.ehr,
+            self.providers,
+            task=RESCHEDULE_FIND_SLOT_TASK,
+            choose_slot_description=(
+                "Pick the offered time the caller wants to move the appointment to, before reading it back."
+            ),
+            choice_properties={},
+            chosen=lambda slot, args: ({"status": "chosen"}, self.reschedule_read_back_node(slot)),
+        )
 
     def reschedule_tool(self, slot: Slot) -> FlowsFunctionSchema:
         # One key per Read-back: a retry of this Reschedule is the same write.
@@ -227,7 +230,7 @@ class _Rescheduling(Booking):
                 result = {"outcome": "rejected", "reason": written.reason}
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
             if written.outcome == "rejected":
-                return await self.slot_lost(slot, written.reason, flow_manager)
+                return await self.finder.slot_lost(slot, written.reason, flow_manager)
             details = f"{_details(self.appointment)}, to {spoken_time(slot.start)} with {slot.provider_name}"
             reason = unsettled(written, verb="move", done="moved", details=details, slot="the new Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
@@ -244,7 +247,7 @@ class _Rescheduling(Booking):
             "reschedule_read_back",
             line,
             then_write=write_node("reschedule", self.reschedule_tool(slot)),
-            choose_again=self.choose_again_node,
+            choose_again=self.finder.choose_again_node,
         )
 
 
