@@ -6,7 +6,7 @@ import pytest
 from fakes import CallTool
 from scripts import handoff, spoken, verify
 
-from clinic_agent.escalation import COULD_NOT_FILE_CALLBACK_REQUEST
+from clinic_agent.callback_requests import COULD_NOT_FILE_CALLBACK_REQUEST
 
 
 @pytest.mark.parametrize(

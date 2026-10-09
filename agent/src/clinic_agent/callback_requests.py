@@ -96,7 +96,7 @@ EMERGENCY_SIGNS = (
 )
 
 
-def escalation_tools(ehr: EhrAdapter) -> list[FlowsFunctionSchema]:
+def callback_request_tools(ehr: EhrAdapter) -> list[FlowsFunctionSchema]:
     return [_handoff_tool(ehr), _emergency_redirect_tool(ehr)]
 
 

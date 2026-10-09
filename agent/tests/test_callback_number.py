@@ -5,7 +5,7 @@ import random
 import pytest
 from scripts import confirm_number, emergency_redirect, give_number, handoff
 
-from clinic_agent.escalation import ASK_FOR_CALLBACK_NUMBER, EMERGENCY_REDIRECT
+from clinic_agent.callback_requests import ASK_FOR_CALLBACK_NUMBER, EMERGENCY_REDIRECT
 
 
 def _unused_phone() -> tuple[str, str]:

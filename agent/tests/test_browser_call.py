@@ -9,9 +9,9 @@ from fakes import RecordingTTS, ScriptedCaller, ScriptedLLM, SilentSTT
 from scripts import confirm_number, give_number, handoff
 from starlette.testclient import TestClient
 
+from clinic_agent.callback_requests import ASK_FOR_CALLBACK_NUMBER
 from clinic_agent.conversation import GREETING
 from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import ASK_FOR_CALLBACK_NUMBER
 from clinic_agent.phi import PHI
 from clinic_agent.server import BROWSER_GONE_AFTER_SECS, create_app
 from clinic_agent.services import VoiceServices

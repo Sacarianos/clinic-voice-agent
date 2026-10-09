@@ -9,17 +9,17 @@ from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
-from clinic_agent.clinic import clinic_info_tool
-from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import (
+from clinic_agent.callback_requests import (
     FILING_ATTEMPTS,
     HANDOFF_REASONS,
     HandoffReason,
-    escalation_tools,
+    callback_request_tools,
     handoff,
     set_callback_number,
     unless_the_call_is_ending,
 )
+from clinic_agent.clinic import clinic_info_tool
+from clinic_agent.ehr import EhrAdapter
 from clinic_agent.holding import with_holding_line
 from clinic_agent.pipeline import Call
 from clinic_agent.timeouts import tool_timeout
@@ -114,7 +114,7 @@ async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str | No
         llm=call.llm,
         context_aggregator=call.aggregators,
         worker=call.worker,
-        global_functions=[*escalation_tools(ehr), clinic_info_tool()],
+        global_functions=[*callback_request_tools(ehr), clinic_info_tool()],
     )
     if caller_phone:
         set_callback_number(flow, caller_phone)

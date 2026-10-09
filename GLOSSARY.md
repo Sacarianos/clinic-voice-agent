@@ -59,7 +59,7 @@ End an appointment and free its slot.
 The agent saying the exact provider, date, time and visit type, followed by the caller's clear yes. Every Book, Reschedule and Cancel needs one.
 _Avoid_: confirmation
 
-## Escalation
+## Callbacks
 
 **Handoff**:
 Ending the automated conversation and creating a Callback Request so clinic staff call the caller back.

@@ -16,8 +16,8 @@ from zoneinfo import ZoneInfo
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.audit import Write
+from clinic_agent.callback_requests import handoff, unless_the_call_is_ending
 from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
-from clinic_agent.escalation import handoff, unless_the_call_is_ending
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.timeouts import tool_timeout

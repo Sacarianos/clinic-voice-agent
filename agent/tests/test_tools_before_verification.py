@@ -5,7 +5,9 @@ from fakes import CallTool
 from scripts import spoken, verify
 
 
-async def test_before_verification_the_llm_is_offered_only_verification_escalation_and_clinic_info(ehr, start_call):
+async def test_before_verification_the_llm_is_offered_only_verification_handoff_emergency_redirect_and_clinic_info(
+    ehr, start_call
+):
     born = ehr.unused_birth_date()
     ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
 

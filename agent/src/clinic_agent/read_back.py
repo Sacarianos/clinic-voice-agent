@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
-from clinic_agent.escalation import unless_the_call_is_ending
+from clinic_agent.callback_requests import unless_the_call_is_ending
 
 ANSWERS = ("yes", "no", "change")
 

@@ -17,8 +17,8 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from clinic_agent.audit import AuditLog, Write
+from clinic_agent.callback_requests import FILING_ATTEMPTS, HandoffReason
 from clinic_agent.ehr import WriteOutcome
-from clinic_agent.escalation import FILING_ATTEMPTS, HandoffReason
 from clinic_agent.timeouts import tool_timeout
 
 ATTEMPTS = 2
