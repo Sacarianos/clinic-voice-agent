@@ -1,179 +1,152 @@
 # Clinic Voice Agent
 
-A phone agent for a fictional family medicine clinic. Callers can book, reschedule and cancel appointments over a real phone call. The agent reads and writes a mock FHIR EHR filled with synthetic patients.
+An AI receptionist for a made-up family medicine clinic. You talk to it out loud, from your browser or over a phone call, and it books, moves or cancels your appointment in the clinic's records.
 
-Work in progress. See [docs/PLAN.md](docs/PLAN.md) for the plan and [GLOSSARY.md](GLOSSARY.md) for the domain language.
+It's a learning project about real-time voice agents: how fast they answer, how they write to a system of record without lying about it, and how to keep patient data out of logs. Every patient in it is synthetic. No real health data goes anywhere.
 
-All patient data is synthetic. Nothing in this repo touches real PHI.
+## What a call sounds like
 
-## Local EHR
+> **Agent:** Thank you for calling Cedar Hollow Family Medicine. How can I help you today?
+>
+> **Caller:** Hi, I'd like to book a sick visit.
+>
+> **Agent:** Sure. What's your full name and date of birth?
+>
+> **Caller:** Alvaro Hudson, December 25th, 1983.
+>
+> **Agent:** Thanks, Alvaro. Dr. Whitfield has Tuesday at 9:30 or 10 AM. Dr. Szczepanski has Tuesday at 2 PM.
+>
+> **Caller:** Tuesday at 10 works.
+>
+> **Agent:** That's a sick visit with Dr. Marcus Whitfield on Tuesday at 10 AM. Shall I book it?
+>
+> **Caller:** Yes.
+>
+> **Agent:** You're booked. Anything else?
 
-One command starts HAPI FHIR, fills it with the fictional clinic and starts the EHR adapter in front of it. It needs Docker only:
+The agent only says "you're booked" after the clinic's records confirm it.
 
+## How it works
+
+```mermaid
+flowchart LR
+    caller(["Caller"])
+    subgraph voice["Voice server · agent/"]
+        direction LR
+        stt["Speech to text<br/>Deepgram"] --> llm["LLM<br/>Claude Haiku 5.5"] --> tts["Text to speech<br/>Deepgram"]
+        flow["Conversation flow<br/>which tools the LLM may use right now"]
+        llm <--> flow
+    end
+    adapter["EHR adapter · adapter/<br/>book, reschedule, cancel, verify"]
+    ehr[("Mock EHR<br/>HAPI FHIR with synthetic patients")]
+    traces["Langfuse traces<br/>patient data masked"]
+
+    caller -- "browser mic or phone call" --> stt
+    tts -- "voice" --> caller
+    flow -- "tool calls" --> adapter --> ehr
+    voice -.-> traces
 ```
+
+1. **You speak.** Your voice reaches the server from a browser page on your computer, or from a phone call through Twilio.
+2. **Speech becomes text.** Deepgram transcribes what you said as you say it.
+3. **The LLM decides what to say or do.** Claude Haiku 5.5 reads the conversation and either answers or calls a tool, like "find open times" or "book this slot".
+4. **The conversation flow sets the rules.** At each step it only hands the LLM the tools that step allows. Before you prove who you are, the booking tools don't exist as far as the LLM can tell.
+5. **Tools go through the adapter.** A small TypeScript service is the only thing allowed to touch the clinic's records. It speaks FHIR, the healthcare data standard, so the voice server doesn't have to.
+6. **Text becomes speech.** Deepgram turns the answer into audio and streams it back. You can interrupt it at any point.
+
+Every call is traced to Langfuse with timing for each step, so you can see where the time goes. Names, dates of birth and phone numbers are masked before anything is logged or traced.
+
+## The conversation, step by step
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Greet
+    Greet --> Verify: caller states name and date of birth
+    Verify --> Verify: doesn't match, one retry
+    Verify --> WhatDoYouNeed: matched exactly one patient
+    WhatDoYouNeed --> FindTimes: book or reschedule
+    WhatDoYouNeed --> PickAppointment: cancel
+    FindTimes --> ReadBack: caller picks a time
+    PickAppointment --> ReadBack
+    ReadBack --> FindTimes: "no" or "change"
+    ReadBack --> Write: caller says yes
+    Write --> WrapUp: records confirm it
+    WrapUp --> [*]
+```
+
+Two exits are open from every step:
+
+- **Handoff.** The agent files a Callback Request so clinic staff call the caller back. It happens when the caller asks for a person, calls for someone else, isn't a patient yet, asks a medical question, fails to verify twice, or when the records keep failing.
+- **Emergency Redirect.** If the caller mentions something like chest pain, the agent tells them to hang up and dial 911, then files an urgent Callback Request.
+
+The agent can also answer simple questions about the clinic, like hours, address and parking, at any time.
+
+## Rules the code enforces
+
+The prompt asks the LLM to behave. These rules don't depend on it, because the code makes breaking them impossible:
+
+| Rule | How |
+|---|---|
+| Nobody hears a patient's details before proving who they are | Scheduling tools only appear after Identity Verification succeeds |
+| Nothing is written without a read-back and a yes | The write tool only appears after the caller's yes is recorded |
+| The agent writes exactly what it read back | The write tool takes no arguments |
+| It never says "done" unless the records confirm it | The success line is spoken by code, only after a confirmed write |
+| No slot gets booked twice | Writes are guarded by the slot's version and an idempotency key |
+| Patient data stays out of logs and traces | Masking runs before anything is logged or exported |
+
+Why rules live in code and not in prompts: [ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md). What data is stored where: [PHI policy](docs/phi-policy.md).
+
+## When the records fail mid-call
+
+Real systems time out, crash and half-finish writes. The adapter can fake each of those on purpose, and the agent handles them like this:
+
+```mermaid
+flowchart TD
+    write["Send the write"] --> result{"Result?"}
+    result -- "succeeded" --> tell["Tell the caller it's done"]
+    result -- "rejected, e.g. slot just taken" --> offer["Apologize and offer other times"]
+    result -- "failed" --> retry["Retry once, same idempotency key"]
+    result -- "unknown, e.g. timeout" --> check["Re-read the records first"]
+    check -- "it landed" --> tell
+    check -- "it didn't" --> retry
+    retry -- "succeeded" --> tell
+    retry -- "still failing" --> handoff["Release any held slot,<br/>Handoff to staff,<br/>tell the caller it wasn't done"]
+```
+
+When the records take more than a second, the agent says "One moment while I check on that." so the caller never hears dead air.
+
+## Try it
+
+You'll talk to the agent in your browser. No phone or Twilio account needed.
+
+**You need:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/), running
+- [uv](https://docs.astral.sh/uv/) for Python
+- An [Anthropic API key](https://console.anthropic.com/) and a [Deepgram API key](https://console.deepgram.com/). Deepgram gives new accounts free credit.
+
+**1. Add your keys.** Copy `.env.example` to `.env`, then fill in `ANTHROPIC_API_KEY` and `DEEPGRAM_API_KEY`. The rest is optional.
+
+**2. Start the clinic's records.** The first run downloads images and generates the patients, so it takes a few minutes.
+
+```bash
 docker compose -f infra/compose.yaml up -d --wait --build
 ```
 
-FHIR base URL: `http://localhost:8080/fhir`. Set `HAPI_PORT` first when 8080 is taken, and `-p <name>` to keep worktrees apart. It holds 60 synthetic adult Patients that Synthea v4.0.0 makes from a fixed seed, three Providers with a Schedule each, and free 30-minute Slots Monday to Friday, 8 to 5 America/New_York time, from the day you start it through 14 days out. `docker compose -f infra/compose.yaml restart seed` runs the seed again and adds any new days. It never changes existing resources. `docker compose -f infra/compose.yaml down -v` wipes the data. Delete `fhir/output` to regenerate the Patients.
+**3. Start the voice server.**
 
-`clinic.json` holds the clinic's time zone, opening hours, Slot length, Booking Window and Providers. The seed, the adapter and the agent all read it, and Compose mounts it into the seed and adapter containers at `/clinic.json`.
-
-Seed tests run against that stack, through the FHIR API. They look only at what the seed made, found by the clinic's identifiers, so other suites' records and leftovers from a crashed run don't affect them. They seed again first, which adds today's days to a stack started earlier. CI runs them against a stack it starts the same way:
-
-```
-cd fhir
-FHIR_BASE_URL=http://localhost:8080/fhir uv run pytest
+```bash
+cd agent && uv run --env-file ../.env clinic-voice-server
 ```
 
-## EHR adapter
+**4. Talk to it.** Open `http://localhost:8765`, click **Connect** and allow the microphone. Use headphones so the agent doesn't hear itself. To get verified, say you're **Alvaro Hudson, born December 25, 1983**.
 
-The agent never talks to FHIR. It calls the adapter in `adapter/`, a small Hono service on `http://localhost:3000` that answers in plain domain shapes. Set `ADAPTER_PORT` when 3000 is taken. See [ADR 0001](docs/adr/0001-ehr-adapter-is-a-separate-typescript-service.md).
+A ten-turn call costs about a cent of Claude usage on the default model.
 
-`POST /patients/verify` runs Identity Verification:
+**Watch the latency.** After each of your turns, the server terminal prints where the time went:
 
-```
-{ "givenName": "Alvaro", "familyName": "Hudson", "dateOfBirth": "1983-12-25" }
-```
-
-It answers 200 with one of `{ "status": "verified", "patientId": "..." }`, `{ "status": "ambiguous" }` or `{ "status": "not_verified" }`. The date of birth must match exactly, the surname must sound the same, and the given name must start with the same letter. When several Patients match, the answer is ambiguous, even if one of them has exactly the name sent, because speech recognition can write down one Patient's name for the other. The agent then asks the Caller to spell the surname and sends the next attempt with `"familyNameSpelled": true`. Only then does an exact surname break the tie, so a spelled-out `"S M I T H"` picks Smith over Smyth. A given name never breaks a tie. A not-verified answer never says which part was wrong.
-
-`GET /providers` lists the Providers a Caller can book with, as `{ "providers": [{ "providerId": "whitfield", "providerName": "Dr. Marcus Whitfield" }] }`. The `providerId` is the clinic's own key and never changes.
-
-`GET /slots` finds free Slots, earliest first. Every filter is optional: `providerId`, `from`, `to`, `partOfDay` and `limit`. `from` and `to` are clinic dates as `YYYY-MM-DD`, both included. A `morning` Slot starts before noon and an `afternoon` one at noon or later. `limit` is 3 unless set, and at most 20. It only offers Slots inside the Booking Window, from now to the end of the day 14 days from today, in clinic time, which is America/New_York. It answers `{ "slots": [{ "slotId", "providerId", "providerName", "start", "end" }], "bookingWindowLastDay": "2026-10-21" }`, with times in clinic wall-clock time and their UTC offset. An unknown `providerId` gets 400 `unknown_provider`.
-
-`GET /slots/<slotId>` reads one Slot as `{ "slot": { "slotId", "providerId", "providerName", "start", "end", "status" } }`, where `status` is `free` or `busy`. An unknown Slot gets 404 `slot_not_found`. The agent uses it to check what a write did.
-
-`POST /appointments` Books a Slot:
-
-```
-{ "patientId": "...", "slotId": "...", "visitType": "annual_physical", "idempotencyKey": "<uuid>" }
-```
-
-`visitType` is `annual_physical`, `sick_visit` or `follow_up`. Book creates the Appointment and marks the Slot busy in one FHIR transaction, guarded by the Slot's version, so two Callers booking the same Slot at once get one Appointment between them. The key is stored on the Appointment. A retry with the same key returns the original Appointment and writes nothing new.
-
-`GET /appointments?patientId=...` lists the Patient's upcoming appointments, earliest first, as `{ "appointments": [{ "appointmentId", "patientId", "slotId", "providerId", "providerName", "start", "end", "visitType" }] }`. Cancelled appointments and ones that already started are left out.
-
-`POST /appointments/<appointmentId>/reschedule` moves an appointment to a new Slot:
-
-```
-{ "patientId": "...", "slotId": "...", "idempotencyKey": "<uuid>" }
-```
-
-It changes the same Appointment, frees the old Slot and takes the new one in one FHIR transaction. Every entry is guarded by the version the adapter read, so a Book that takes the new Slot first leaves the Reschedule rejected as `slot_taken` and the Slot with one Appointment. It is idempotent by target state: an Appointment that already holds the new Slot answers `succeeded`.
-
-`POST /appointments/<appointmentId>/cancel` with `{ "patientId": "...", "idempotencyKey": "<uuid>" }` cancels the Appointment and frees its Slot in one transaction. Cancelling an appointment that is already cancelled answers `succeeded`.
-
-Both refuse to change an appointment that already started, and only change an appointment of the `patientId` given. A version conflict makes the adapter read the EHR once more and decide again, so a racing retry of the same write still answers `succeeded`.
-
-Every write answers 200 with one of four outcomes, and the agent acts on each differently:
-
-- `{ "outcome": "succeeded", "appointment": { "appointmentId", "patientId", "slotId", "providerId", "providerName", "start", "end", "visitType" } }`: written. Only now may the agent say so.
-- `{ "outcome": "rejected", "reason": "slot_taken" }`: a business rule stopped it and nothing was written. Book's reasons are `slot_taken`, `outside_booking_window` and `slot_not_found`. Reschedule adds `appointment_not_found`, `appointment_cancelled` and `appointment_in_past`. Cancel's are `appointment_not_found` and `appointment_in_past`.
-- `{ "outcome": "failed" }`: nothing was written, so a retry with the same key is safe.
-- `{ "outcome": "unknown" }`: the request reached HAPI but no answer came back. Read the EHR again before telling the Caller anything.
-
-The adapter answers every request within `REQUEST_DEADLINE_MS`, 4000 unless set, every FHIR call it makes included. A slow EHR fails a read, and fails a write or turns it `unknown`, instead of holding the call. The agent counts on this deadline, `ADAPTER_DEADLINE_SECS` in its `timeouts` module, and waits a second longer. `GET /healthz` reports it as `requestDeadlineMs`, and an agent test fails when the two differ.
-
-A write that lands only in part is safe and can be finished. Each write takes its new Slot before pointing an Appointment at it, and ends an Appointment before freeing its Slot, so a half-applied write never leaves a booked Appointment in a free Slot. A Slot a write takes records the write's idempotency key, so the same write sent again treats that busy Slot as its own and completes. Cancelling again frees a Slot still held for the cancelled Appointment.
-
-`POST /slots/<slotId>/release` with `{ "idempotencyKey": "<uuid>" }` settles a Book or Reschedule that the agent gives up on after an `unknown` answer. The write may have landed in part, leaving the Slot busy, or may still be on its way to HAPI. Release frees the Slot if that write holds it, and changes the Slot either way, so a write still on its way, guarded by the Slot version it read, can never commit. It answers `succeeded` when the write holds the Slot no longer and never will, and `rejected` with `write_landed` when the write landed in full and holds the Slot with a booked Appointment. An unknown Slot is `rejected` with `slot_not_found`.
-
-`POST /appointments/<appointmentId>/cancel/release` with `{ "patientId": "...", "idempotencyKey": "<uuid>" }` does the same for a Cancel. It changes a booked Appointment, so a Cancel still on its way, guarded by the Appointment version it read, can never commit, and answers `succeeded`: the Appointment stays booked. A Cancel that landed is finished, its Slot freed if only part of it landed, and answers `rejected` with `write_landed`. Another Patient's or an unknown Appointment is `rejected` with `appointment_not_found`.
-
-Fault injection makes HAPI misbehave on purpose. Send `x-inject-fault: <fault>` on any request, or set `INJECT_FAULT=<fault>` to apply it to every request:
-
-- `timeout`: HAPI applies each write but answers only after the adapter's deadline. Writes answer `unknown`, and the write is in FHIR by then.
-- `server_error`: HAPI answers every request with a 500 and applies nothing. Writes answer `failed`, reads `ehr_unavailable`.
-- `slot_taken`: someone else takes the Slot just before a Book or Reschedule commits. They answer `rejected` with `slot_taken`. Cancel takes no Slot and is unaffected.
-- `half_write`: HAPI applies only the first half of a write's transaction and the connection drops. Writes answer `unknown`. Sending the same write again finishes it.
-- `stalled_write`: HAPI sits on each write until the adapter's deadline passes, then applies it 3 s later if it still applies. Writes answer `unknown`, and nothing is in FHIR until after that answer.
-- `slow`: HAPI answers every request 2 s late, reads included. One FHIR call still fits within the deadline, so a call hears the holding line and the request succeeds.
-
-An unknown fault name gets 400 `invalid_request`.
-
-`POST /callback-requests` files a Callback Request as a FHIR Task:
-
-```
-{ "phoneNumber": "+15555550123", "reason": "Caller asked to speak to a person", "emergency": false, "patientId": "..." }
-```
-
-`patientId` is optional and links the Task to the Patient. It answers 201 with `{ "callbackRequestId": "..." }`. The number and the emergency flag are inputs on the Task labelled `callback phone number` and `emergency`, and an emergency Task has priority `stat`.
-
-Errors come back as `{ "error": "<code>" }`: `invalid_request` with 400, `not_found` with 404, `ehr_unavailable` with 502 when HAPI can't be reached or fails during a read. Error bodies never echo the request.
-
-Adapter tests start the adapter on a free port and call it over HTTP against the real HAPI. Each test creates its own Patients and deletes them when its file finishes, so they pass on the seeded stack and on an empty HAPI alike, and the seed tests still find exactly the seeded clinic. Needs Node 24 and pnpm:
-
-```
-cd adapter
-pnpm install
-FHIR_BASE_URL=http://localhost:8080/fhir pnpm test
-pnpm typecheck
-```
-
-Copy `.env.example` to `.env` for the API keys later tickets need.
-
-## Voice calls
-
-The voice server lives in `agent/`. You can talk to the agent in two ways: from a browser on your own computer, through its microphone, or over a real phone call through Twilio. Every call runs its own Pipecat pipeline: Silero VAD, Deepgram Nova-3, the configured LLM, and Deepgram Aura-2. Nova-3 gets the three Providers' full names and surnames as keyterms, so it hears names like Szczepanski and Kowalczyk. Browser calls, phone calls and the text transport build the same pipeline in `pipeline.py` and run the same conversation flow; only the ends that hear and speak differ. A Caller can talk over anything the agent says, including the greeting and the Read-back.
-
-The conversation is a `pipecat.flows` state machine in `agent/src/clinic_agent/conversation.py`. The agent greets the Caller and runs Identity Verification through the adapter before anything else. `verify_patient` makes the LLM say whether the details are the Caller's own. When it says they belong to someone else, the details never reach the EHR and the call ends with a Proxy Caller Handoff. A name that matches several Patients gets a request to spell the last name. The flow remembers that it asked, so only the next attempt is sent as spelled. If the spelled name still matches more than one Patient, the call ends with a Handoff instead of a guess. A failed attempt gets the same failure message whatever didn't match, and a second one ends the call with a Handoff message. Once verified, the call moves on to Intent. Each state offers the LLM only its own tools, so nothing past verification can be reached before it. [ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md) says why.
-
-Booking lives in `agent/src/clinic_agent/booking.py`. From Intent the agent searches for Slots by Provider, days and part of day, and offers two or three. When the Caller picks one and says what the visit is for, `choose_slot` moves to the Read-back, where the agent itself says the Provider, date, time and Visit Type. The Read-back offers one tool, `record_read_back_answer`, which records the Caller's answer as yes, no or change. All three writes share it from `read_back.py`. Only a recorded yes moves on, to a state whose only tool is `book_appointment`. It takes no arguments: it books exactly what was read back, under an idempotency key made for that Read-back. A no or a change goes back to choosing a time without starting over. The agent says the appointment is booked only when the adapter answers `succeeded`. A Slot taken in the meantime gets an apology and new offers.
-
-Rescheduling and cancelling live in `agent/src/clinic_agent/appointments.py`. From Intent, `list_appointments` tells the Caller their upcoming appointments. With more than one, the agent asks which. Choosing one to cancel goes to a Read-back of that appointment. Choosing one to reschedule goes to the same Slot search as booking, and picking a new time goes to a Read-back of the old and new times. As with booking, only a recorded yes reaches `cancel_appointment` or `reschedule_appointment`, and a no or a change goes back to choosing the appointment or the time. Neither write takes arguments, and each runs under a key made for its Read-back. A new time taken in the meantime gets an apology and new offers.
-
-All three writes go through `agent/src/clinic_agent/writes.py`. A `failed` write is sent once more with the same key. After an `unknown` one the agent reads the EHR before saying anything: the Patient's appointments, and for a Cancel the Slot too. If the write is fully in place it counts as done. Otherwise it is sent once more, which also finishes a half-applied write. A write that answered `unknown` may still land later, so before the agent gives it up as failed it releases it. For a Book or Reschedule, `POST /slots/<slotId>/release` frees the Slot it may have left held. For a Cancel, `POST /appointments/<appointmentId>/cancel/release` changes the Appointment. Only then does it say nothing was done, and a Book's or Reschedule's Callback Request says the Slot is not held. When the second attempt still fails, or the EHR can't be read to confirm it, the agent makes a Handoff with a Callback Request that says which appointment it was about. It tells the Caller it couldn't book, move or cancel, or that it couldn't confirm, and never that it did. Any tool that calls the EHR speaks a holding line after a second without an answer, and a short reminder every five seconds after that.
-
-The server needs the local EHR stack running and reaches the adapter at `EHR_ADAPTER_URL`, `http://localhost:3000` by default.
-
-A Handoff files a Callback Request through the adapter and tells the Caller staff will call back. It fires on a request for a person, a Proxy Caller, a new patient, a clinical question, a second failed verification, and a spelled name that still matches more than one Patient. An emergency mention triggers an Emergency Redirect from any state, before or after verification: the agent says to hang up and dial 911, files an emergency Callback Request and ends the call. Both tools are offered in every node as flow-wide functions, as is `get_clinic_info`, which answers Clinic Questions from the static config in `clinic.py`. If a Callback Request can't be saved, the Caller is told so instead of being promised a callback.
-
-The number a Callback Request calls back is the call's caller ID. On a phone call that is Twilio's `From`: `/voice` passes it to the media stream as a `from_number` stream parameter. A browser call has none, so the agent asks for one when it needs it. In a Handoff it asks before filing, reads the number back, and files only after the Caller says it is right; a no asks again. In an Emergency Redirect the 911 line always comes first. Only then does the agent ask, if the Caller can, for a number where staff can reach them later, and it files that number as soon as it hears it, with no read-back, so nobody in an emergency is kept on the line. A Caller who hangs up instead gets no Callback Request. Nothing is ever filed with a made-up number. The callback number is never used to verify anyone.
-
-You need `DEEPGRAM_API_KEY` and the key for the LLM you pick in `.env`. `LLM_CONFIG=haiku`, the default, uses Claude Haiku 5.5 with thinking off and `ANTHROPIC_API_KEY`. Its system prompt leaves out Pipecat's async-tool guidance, which made it talk before a Handoff. `LLM_CONFIG=haiku-4-5` uses Claude Haiku 4.5 with the same key. `LLM_CONFIG=gemini` uses Gemini 3.6 Flash and `OPENROUTER_API_KEY`. With both Langfuse keys set, every call is traced to Langfuse Cloud. Twilio is optional: the phone routes are on only when both `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are set, and the server refuses to start with only one of them.
-
-The server listens on `127.0.0.1:8765`. Set `PORT` to change it and `LOG_LEVEL=DEBUG` to see every frame.
-
-### In the browser
-
-With the local EHR stack up, start the server:
-
-```
-cd agent
-uv run --env-file ../.env clinic-voice-server
-```
-
-1. Open `http://localhost:8765` in Chrome, Edge or Firefox. It redirects to `/client/`, Pipecat's prebuilt page. Use `localhost`, not your machine's network address: browsers only offer the microphone to `localhost` or HTTPS pages.
-2. Leave the transport menu at the top on SmallWebRTC and click Connect.
-3. The browser asks to use your microphone. Allow it. Use headphones, or the agent may hear itself and cut itself off.
-4. The agent greets you. Talk as a Caller would. The Conversation panel shows both sides as text, and the Events panel at the bottom logs what the page and the server send each other.
-5. Click Disconnect to hang up. The agent also hangs up by itself after a Handoff or an Emergency Redirect. The page pings the server every second, so a closed tab or a sleeping laptop ends the call 5 seconds after its last ping.
-
-The message box under the conversation sends a typed line instead of speech. It skips VAD and STT, so a typed turn gets no latency breakdown. It helps when no microphone is at hand, and the agent still speaks its answers.
-
-The page and the server talk WebRTC directly, over host candidates on your machine, with no STUN or TURN server. Pipecat's `SmallWebRTCTransport` from the `webrtc` extra carries the audio over aiortc, and the page comes from the `pipecat-ai-prebuilt` package. A browser call is traced to Langfuse like a phone call, as one session named by the session id the page started with.
-
-### Over the phone
-
-Start the server with the Twilio keys set, then the tunnel in a second terminal:
-
-```
-ngrok config add-authtoken <NGROK_AUTHTOKEN>   # once
-ngrok http 8765
-```
-
-Your free ngrok account has one static domain: `ngrok http 8765 --domain <your-domain>` keeps the URL the same between runs, so the Twilio setting below never changes.
-
-In the Twilio Console, open Phone Numbers, then Active numbers, then your number. Under Voice Configuration, set "A call comes in" to Webhook, `https://<your-ngrok-domain>/voice`, HTTP POST, and save. The trial account only takes calls from verified numbers and plays a trial notice before the agent picks up.
-
-Twilio signs each webhook with your auth token over the exact URL in that setting. ngrok ends TLS and forwards plain HTTP to the server, but it keeps the public host in the `Host` header, so the server rebuilds `https://<Host>/voice` and checks the `X-Twilio-Signature` header against it. A request without a valid signature gets a 403 and no TwiML, and the server logs the URL it checked. If real calls get a 403, compare that URL with the console setting: it must be `https`, with no port and no trailing slash, and ngrok must not rewrite the host header, so leave out `--host-header`. `TWILIO_AUTH_TOKEN` must be the primary auth token of the account that owns the number.
-
-### Reading latency
-
-The server log prints where each response's time went, from the moment VAD decides the Caller stopped talking to the agent's first audio leaving the server. One block per turn, shaped like this, with made-up numbers:
-
-```
-INFO | clinic_agent.server:on_latency_breakdown - Response latency:
+```text
+Response latency:
  0.200s  endpointing wait     [config: VAD stop_secs]
  0.180s  transcription        [DeepgramSTTService#0]
  0.420s  LLM inference        [AnthropicLLMService#0]
@@ -181,93 +154,54 @@ INFO | clinic_agent.server:on_latency_breakdown - Response latency:
  1.050s  TOTAL
 ```
 
-The TOTAL line is the voice-to-voice latency as the server sees it. The first block of a call ends `TOTAL (from client connected)` and measures the wait for the greeting, as does the `Greeting started ...s after the call connected` line. What the server can't see is the audio path on either side of it: the browser's capture and playback buffers, or the phone network on a phone call, which add more. A browser call on the same machine has the shortest such path, so its numbers are the closest to the agent's own latency.
+TOTAL is the time from when you stop talking to when the agent starts answering. The numbers above are made up. Yours appear in your terminal.
 
-In Langfuse, each call is one trace session, named by its Twilio CallSid or the browser's session id. The `conversation` span holds one `turn` span per exchange, with STT, LLM and TTS spans under it. Their `metrics.ttfb` attributes give time to first byte, and `turn.user_bot_latency_seconds` gives the same voice-to-voice latency as the log.
+To call it from a real phone through Twilio, see [Over the phone](agent/README.md#over-the-phone).
 
-Names, dates of birth and phone numbers are masked before anything is logged or exported to Langfuse. Everything the Caller says before Identity Verification is masked whole, so a trace shows `[UNVERIFIED CALLER]` there. Every attempt to write to the EHR is appended to an audit log, `audit-log.jsonl` in the server's working directory unless `AUDIT_LOG_PATH` names another file. [docs/phi-policy.md](docs/phi-policy.md) says what is stored where, what the masking covers and misses, and which vendors would need a BAA. Say only synthetic names and dates on test calls.
+## Run the tests
 
-To hear how a call handles a slow or broken EHR, start the stack with a fault for every request, such as `INJECT_FAULT=timeout docker compose -f infra/compose.yaml up -d --wait --build`. Every write then runs to the adapter's deadline and comes back `unknown`.
+None of these need API keys. A scripted fake stands in for the LLM. Start the records first, as in step 2.
 
-Agent tests need no API keys and no audio. The voice server tests play Twilio's side of the media stream, with a scripted Caller in place of Deepgram, and run calls through to a booked Appointment. The browser tests play the page's side with an aiortc peer on the same machine: they start a session, send the WebRTC offer, hear the greeting come back over WebRTC, and run a Handoff that asks for a callback number through to the Callback Request. The conversation tests run whole calls as typed text through the same flow, against the real adapter and HAPI, so start the local EHR stack first. The failure tests put a small proxy in front of the adapter that adds the fault header to the requests a test picks. Set `FHIR_BASE_URL` and `EHR_ADAPTER_URL` when they don't listen on ports 8080 and 3000:
-
-```
-cd agent
-uv run pytest
+```bash
+cd adapter && pnpm install && pnpm test
 ```
 
-A scripted fake plays the LLM by default. `--llm haiku` or `--llm gemini` runs the same calls against the real model, with its key from `.env`. Tests that need the fake to force a move a real model wouldn't make are skipped then:
-
-```
-uv run --env-file ../.env pytest --llm haiku
+```bash
+cd agent && uv run pytest
 ```
 
-A conversation test opens a `TextCall` with what the fake LLM should do, speaks Caller lines, and checks what the agent said, the tools it called and was offered, the state the call reached, and the FHIR records:
-
-```python
-async with start_call(["What is your full name and date of birth?", verify("Rosalind", "Okonkwo", born)]) as call:
-    await call.say("I'd like to book an appointment.")
-    await call.say("Rosalind Okonkwo, March 3, 1961.")
-    assert call.tool_results("verify_patient") == [{"status": "verified"}]
-    assert call.state == "intent"
+```bash
+cd evals && uv run pytest
 ```
 
-## Evals
-
-The eval harness in `evals/` runs whole calls through the same text transport as the conversation tests, with a real LLM config playing the agent and a second LLM, Claude Haiku 4.5 whatever the agent runs, playing the Patient. Real runs cost money, so they never run in CI.
-
-Each scenario is a YAML file in `evals/scenarios/`: the Patient, the run's own Provider and Slots, any Appointments the Patient already holds, the Caller's goal and twist, and the expected end state. Slots are given as clinic weekdays after today and a time, so a scenario works on any day. The goal and twist can name a Slot, as `{late}` for its day and time or `{late_day}` for its day. There are ten:
-
-- `plain_book`, `reschedule`, `cancel`: the three writes, each with a small twist.
-- `wrong_dob_first`: the Caller gives a date of birth a year off, then the right one.
-- `changes_mind`: the Caller takes a time, hears it read back, and asks for another day.
-- `interrupts`: the Caller cuts in with a Clinic Question while times are being listed. The text transport has no audio, so this is a line that breaks into the flow, not a barge-in over speech.
-- `asks_for_a_person` and `proxy_caller`: both expect a Handoff. A Proxy Caller gives someone else's details, so `proxy_caller` also has `verification: false`.
-- `mentions_chest_pain`: expects an Emergency Redirect, so `expect` has `emergency: true`.
-- `garbled_provider_name`: the Caller says a Provider's name wrongly, the way it sounds.
-
-`{wrong_birth_date}` in a goal or twist reads as the Patient's real date of birth one year on.
-
-Every run seeds its own records in HAPI: a Patient with a date of birth no one else has, a Provider with the scenario's Slots, and a phone number of its own. After the call it reads the EHR, then deletes all of it, along with the Callback Requests from that number and the Patient's Appointments. A Slot of another Provider that the Patient took is set free again. Runs go one at a time, so no run sees another's records.
-
-Seven graders score each run, each a pass or a fail with a reason. All are plain code:
-
-- `fhir_end_state`: the Patient holds exactly the booked Appointments the scenario expects, and a rescheduled one is still the same Appointment.
-- `no_double_booking`: no Slot holds two Appointments, and no Appointment sits in a free Slot.
-- `no_patient_data_before_verification`: before Identity Verification succeeds, no tool past it ran and the agent said nothing from the Patient's record.
-- `say_do_match`: every Book, Reschedule or Cancel the agent says it made comes after a succeeded result from that tool.
-- `no_transfer_promise`: the agent never promises or offers a transfer. The clinic only files Callback Requests.
-- `verification_when_expected`: the Patient was verified when the scenario's `expect` has `verification: true`, and never when it has `verification: false`. Without it, either passes.
-- `handoff_when_expected`: a Callback Request was filed if, and only if, the scenario expects a Handoff, and an emergency one if, and only if, it expects an Emergency Redirect.
-
-With the local EHR stack up, this runs every scenario three times for a named LLM config:
-
-```
-cd evals
-uv run --env-file ../.env clinic-evals --config haiku
+```bash
+cd fhir && uv run pytest
 ```
 
-`--repeats` changes the count and `--scenario <name>` picks scenarios. It needs `ANTHROPIC_API_KEY` for the simulated Caller and the agent config's own key. It prints each run's result, then a report, and saves every transcript, tool call and measurement to `evals/results/<batch>.json`, which version control ignores. With the Langfuse keys set, each run becomes a trace named `eval <scenario>`, tagged `eval`, the config name and the scenario, in one session per batch, with a boolean score per grader and the reason as the score's comment. Without them the scores stay local, with a warning. Transcripts never go to Langfuse. Reasons quote the agent's lines, so they first pass through the agent's PHI mask, the one `docs/phi-policy.md` describes, taught the run's seeded Patient. The results file keeps transcripts as they were said, with synthetic data only.
+The adapter tests need Node 24 and pnpm. The [evals](evals/README.md) can also run whole conversations against a real LLM, with a second LLM playing the patient, and score them. Those runs cost money and never run in CI.
 
-The report has one column per LLM config:
+## What's in the repo
 
-- Pass rate for every grader.
-- Per-turn latency, P50 and P95: from the Caller's line to the agent finishing its turn, tool time included. This is the wait until the agent stops talking, which is longer than a phone's wait for the first word.
-- LLM time to first token, P50 and P95: for each run of the agent's LLM, how long it took to start answering, as the LLM service reports it. A turn with a tool call runs the LLM more than once. This is the part of a phone Caller's wait for the first word that the LLM config decides.
-- Tool time, P50 and P95, across every tool call.
-- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`, and Gemini from OpenRouter's, with its cached tokens at the full input rate since OpenRouter lists no cache rates. A config without a price there shows tokens and `n/a`.
-
-`clinic-evals --report` prints the latest saved batch of each config side by side without running anything. Run each config once to compare them.
-
-The simulated Caller types perfect text, so the noise injector garbles some of its lines the way STT does before the agent hears them. `evals/confusions.yaml` lists what STT writes for numbers, weekdays, Provider names and Patient surnames, each tagged with its `source`. The first entries are `hand-written`. When a real call shows STT getting a word wrong, add the pair there with the call id as its source. `--noise-rate` is the share of matching words that garble. It is 0.2 unless set, and 0 turns noise off. Each saved run lists the confusions applied. A new scenario's Patient surname needs an entry in the list, or its name is never garbled.
-
-The harness's own tests cost nothing: graders read hand-built runs, and runs use the scripted LLM and a scripted Caller against the local stack. CI runs them with the agent's tests:
-
+```text
+agent/      Voice server: audio pipeline, conversation flow, PHI masking (Python)
+adapter/    EHR adapter: the only code that touches the records (TypeScript)
+fhir/       Seeds the mock EHR with synthetic patients, doctors and open slots
+evals/      Scenario-based evals with a simulated caller and graders
+infra/      Docker Compose for the mock EHR and the adapter
+docs/       Plan, decision records, PHI policy
+clinic.json The clinic's hours, time zone, booking window and doctors
 ```
-cd evals
-uv run pytest
-```
+
+## Learn more
+
+- [Voice server](agent/README.md): browser and phone setup, the conversation in detail, reading latency in Langfuse
+- [EHR adapter](adapter/README.md): every endpoint, the four write outcomes, fault injection
+- [Local EHR](fhir/README.md): what the seed creates and how to reset it
+- [Evals](evals/README.md): scenarios, graders and the report
+- [Glossary](GLOSSARY.md): what words like Slot, Read-back and Handoff mean here
+- [Decisions](docs/adr/): why a separate adapter, why Pipecat, why rules in code
+- [Plan](docs/PLAN.md): milestones and what's left
 
 ## Latency baseline
 
-Not measured yet. After a few real calls on the default config, record the typical LLM time to first token and the rough voice-to-voice latency here.
+Not measured yet. After a few real browser calls on the default config, record the typical LLM time to first token and voice-to-voice latency here.
