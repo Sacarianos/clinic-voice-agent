@@ -19,7 +19,7 @@ from clinic_agent.ehr import Appointment, EhrAdapter, Provider, Slot, WriteOutco
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.timeouts import tool_timeout
-from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
+from clinic_agent.writes import unsettled, write_tool, write_until_settled
 
 ANYTHING_ELSE = "Is there anything else I can help with?"
 
@@ -158,16 +158,8 @@ class _Appointments:
             reason = unsettled(written, verb="cancel", done="cancelled", details=_details(appointment))
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
-        return FlowsFunctionSchema(
-            name="cancel_appointment",
-            description="Cancel exactly the appointment you read back, now that the caller has said yes to it.",
-            properties={},
-            required=[],
-            handler=unless_the_call_is_ending(with_holding_line(cancel_appointment)),
-            # A write must not be dropped halfway because the Caller spoke.
-            cancel_on_interruption=False,
-            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
-        )
+        description = "Cancel exactly the appointment you read back, now that the caller has said yes to it."
+        return write_tool("cancel_appointment", description, cancel_appointment)
 
     def choose_appointment_node(self, task: str = CHOOSE_APPOINTMENT_TASK) -> NodeConfig:
         return {
@@ -240,16 +232,8 @@ class _Rescheduling(Booking):
             reason = unsettled(written, verb="move", done="moved", details=details, slot="the new Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
-        return FlowsFunctionSchema(
-            name="reschedule_appointment",
-            description="Move the appointment exactly as you read back, now that the caller has said yes to it.",
-            properties={},
-            required=[],
-            handler=unless_the_call_is_ending(with_holding_line(reschedule_appointment)),
-            # A write must not be dropped halfway because the Caller spoke.
-            cancel_on_interruption=False,
-            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
-        )
+        description = "Move the appointment exactly as you read back, now that the caller has said yes to it."
+        return write_tool("reschedule_appointment", description, reschedule_appointment)
 
     def reschedule_read_back_node(self, slot: Slot) -> NodeConfig:
         line = (

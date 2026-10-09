@@ -21,7 +21,7 @@ from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcom
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.timeouts import tool_timeout
-from clinic_agent.writes import WRITE_TOOL_TIMEOUT_SECS, unsettled, write_until_settled
+from clinic_agent.writes import unsettled, write_tool, write_until_settled
 
 CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -163,16 +163,8 @@ class Booking:
             reason = unsettled(written, verb="book", done="booked", details=_details(slot, visit_type), slot="the Slot")
             return {"outcome": written.outcome}, await handoff(self.ehr, flow_manager, reason)
 
-        return FlowsFunctionSchema(
-            name="book_appointment",
-            description="Book exactly what you read back, now that the caller has said yes to it.",
-            properties={},
-            required=[],
-            handler=unless_the_call_is_ending(with_holding_line(book_appointment)),
-            # A write must not be dropped halfway because the Caller spoke.
-            cancel_on_interruption=False,
-            timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
-        )
+        description = "Book exactly what you read back, now that the caller has said yes to it."
+        return write_tool("book_appointment", description, book_appointment)
 
     async def slot_lost(self, slot: Slot, reason: str | None, flow_manager: FlowManager) -> tuple[dict, NodeConfig]:
         """The write was rejected because the Slot can't be had any more. Offer other times."""

@@ -15,10 +15,12 @@ the same way. Only then is the Caller told nothing was done.
 from collections.abc import Awaitable, Callable
 
 import httpx
+from pipecat.flows import FlowsFunctionSchema
 
 from clinic_agent.audit import AuditLog, Write
-from clinic_agent.callback_requests import FILING_ATTEMPTS, HandoffReason
+from clinic_agent.callback_requests import FILING_ATTEMPTS, HandoffReason, unless_the_call_is_ending
 from clinic_agent.ehr import WriteOutcome
+from clinic_agent.holding import Handler, with_holding_line
 from clinic_agent.timeouts import tool_timeout
 
 ATTEMPTS = 2
@@ -28,6 +30,20 @@ MAX_RECONCILE_READS = 2
 
 # The slowest write: every attempt sent and re-read, then released, and the Callback Request filed.
 WRITE_TOOL_TIMEOUT_SECS = tool_timeout(ATTEMPTS * (1 + MAX_RECONCILE_READS) + 1 + FILING_ATTEMPTS)
+
+
+def write_tool(name: str, description: str, write: Handler) -> FlowsFunctionSchema:
+    """The only tool of a write node. It takes no arguments, so it writes exactly what was read back."""
+    return FlowsFunctionSchema(
+        name=name,
+        description=description,
+        properties={},
+        required=[],
+        handler=unless_the_call_is_ending(with_holding_line(write)),
+        # A write must not be dropped halfway because the Caller spoke.
+        cancel_on_interruption=False,
+        timeout_secs=WRITE_TOOL_TIMEOUT_SECS,
+    )
 
 
 async def write_until_settled(
