@@ -2,7 +2,7 @@ import type { Appointment, Practitioner, Schedule, Slot } from "fhir/r4";
 import { bookingWindow, isInBookingWindow } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
 import { offeredSlot } from "./find-slots.ts";
-import { providersIn, type Provider, type Providers } from "./providers.ts";
+import { providersIn, scheduleIdOf, type Provider, type Providers } from "./providers.ts";
 import { isHeldFor } from "./slot-holds.ts";
 
 export const VISIT_TYPES = {
@@ -99,6 +99,4 @@ export async function slotToTake(
   return { slot, provider };
 }
 
-export const slotIdOf =(appointment: Appointment) => appointment.slot?.[0]?.reference?.split("/")[1] ?? "";
-
-export const scheduleIdOf = (slot: Slot) => slot.schedule.reference?.split("/")[1] ?? "";
+export const slotIdOf = (appointment: Appointment) => appointment.slot?.[0]?.reference?.split("/")[1] ?? "";

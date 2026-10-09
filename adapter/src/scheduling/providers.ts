@@ -1,4 +1,4 @@
-import type { FhirResource, HumanName, Practitioner, Schedule } from "fhir/r4";
+import type { FhirResource, HumanName, Practitioner, Schedule, Slot } from "fhir/r4";
 import { PROVIDER_SYSTEM } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
 
@@ -59,3 +59,6 @@ export function providersIn(resources: FhirResource[]): Providers {
 function spokenName(name: HumanName | undefined): string {
   return [...(name?.prefix ?? []), ...(name?.given ?? []).slice(0, 1), name?.family ?? ""].join(" ").trim();
 }
+
+// The id of the Schedule a Slot belongs to, which says whose Slot it is.
+export const scheduleIdOf = (slot: Slot) => slot.schedule.reference?.split("/")[1] ?? "";

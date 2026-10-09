@@ -1,14 +1,8 @@
-import type { Appointment, Bundle, Slot } from "fhir/r4";
+import type { Appointment, Slot } from "fhir/r4";
 import type { FhirClient } from "../fhir/client.ts";
-import { versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
-import {
-  appointmentDetails,
-  readPatientsAppointment,
-  scheduleIdOf,
-  slotIdOf,
-  type AppointmentDetails,
-} from "./appointments.ts";
-import { loadProviderOfSchedule } from "./providers.ts";
+import { commitGuarded, guardedPut, versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
+import { appointmentDetails, readPatientsAppointment, slotIdOf, type AppointmentDetails } from "./appointments.ts";
+import { loadProviderOfSchedule, scheduleIdOf } from "./providers.ts";
 import { freed } from "./slot-holds.ts";
 
 export type CancelRequest = {
@@ -34,38 +28,17 @@ export function cancel(fhir: FhirClient, request: CancelRequest, now: Date): Pro
     const providers = await loadProviderOfSchedule(fhir, scheduleIdOf(slot));
     const cancelled: Appointment = { ...appointment, status: "cancelled" };
     const succeeded = () => ({ outcome: "succeeded" as const, appointment: appointmentDetails(cancelled, slot, providers) });
-    const freeSlot = {
-      resource: freed(slot),
-      request: { method: "PUT" as const, url: `Slot/${slot.id}`, ifMatch: `W/"${slot.meta?.versionId}"` },
-    };
 
     if (appointment.status === "cancelled") {
       if (!isStillHeldFor(slot, appointment)) return succeeded();
       // An earlier Cancel landed only in part: the Appointment ended but its Slot stayed busy.
-      const result = await fhir.transaction({ resourceType: "Bundle", type: "transaction", entry: [freeSlot] });
-      if (result.status === "committed") return succeeded();
-      if (result.status === "conflict") return "conflict";
-      return { outcome: result.status };
+      return commitGuarded(fhir, [guardedPut(freed(slot))], succeeded);
     }
     if (new Date(appointment.start!) < now) return { outcome: "rejected", reason: "appointment_in_past" };
 
     // Ending the Appointment comes first, so a write that lands only in part never frees a Slot
     // that a booked Appointment still holds.
-    const transaction: Bundle<Slot | Appointment> = {
-      resourceType: "Bundle",
-      type: "transaction",
-      entry: [
-        {
-          resource: cancelled,
-          request: { method: "PUT", url: `Appointment/${appointment.id}`, ifMatch: `W/"${appointment.meta?.versionId}"` },
-        },
-        freeSlot,
-      ],
-    };
-    const result = await fhir.transaction(transaction);
-    if (result.status === "committed") return succeeded();
-    if (result.status === "conflict") return "conflict";
-    return { outcome: result.status };
+    return commitGuarded(fhir, [guardedPut(cancelled), guardedPut(freed(slot))], succeeded);
   });
 }
 
@@ -94,19 +67,9 @@ export async function releaseFromCancel(
     const appointment = await readPatientsAppointment(fhir, request.patientId, request.appointmentId);
     if (!appointment) return { outcome: "rejected", reason: "appointment_not_found" };
     if (appointment.status === "cancelled") return { outcome: "rejected", reason: "write_landed" };
-    const result = await fhir.transaction({
-      resourceType: "Bundle",
-      type: "transaction",
-      entry: [
-        {
-          resource: releasedFromCancel(appointment, request.idempotencyKey),
-          request: { method: "PUT", url: `Appointment/${appointment.id}`, ifMatch: `W/"${appointment.meta?.versionId}"` },
-        },
-      ],
-    });
-    if (result.status === "committed") return { outcome: "succeeded" };
-    if (result.status === "conflict") return "conflict";
-    return { outcome: result.status };
+    return commitGuarded(fhir, [guardedPut(releasedFromCancel(appointment, request.idempotencyKey))], () => ({
+      outcome: "succeeded" as const,
+    }));
   });
   if (released.outcome !== "rejected" || released.reason !== "write_landed") return released;
   const finished = await cancel(fhir, request, now);

@@ -1,7 +1,7 @@
 import type { Appointment, Bundle, Slot } from "fhir/r4";
 import { IDEMPOTENCY_KEY_SYSTEM } from "../clinic.ts";
 import { EhrUnavailableError, type FhirClient } from "../fhir/client.ts";
-import type { WriteOutcome } from "../write-outcome.ts";
+import { guardedPut, type WriteOutcome } from "../write-outcome.ts";
 import {
   appointmentDetails,
   slotIdOf,
@@ -62,10 +62,7 @@ export async function book(fhir: FhirClient, request: BookRequest, now: Date): P
       resourceType: "Bundle",
       type: "transaction",
       entry: [
-        {
-          resource: taken(slot, request.idempotencyKey),
-          request: { method: "PUT", url: `Slot/${slot.id}`, ifMatch: `W/"${slot.meta?.versionId}"` },
-        },
+        guardedPut(taken(slot, request.idempotencyKey)),
         {
           resource: appointment,
           // Second line of defence for a retry racing this one with the same key.
