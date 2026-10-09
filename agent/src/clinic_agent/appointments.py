@@ -140,10 +140,15 @@ class _Appointments:
                     return False
                 return await self.ehr.slot_is_free(appointment.slot_id)
 
+            async def release() -> WriteOutcome:
+                return await self.ehr.release_from_cancel(
+                    patient_id=patient_id, appointment_id=appointment.appointment_id, idempotency_key=idempotency_key
+                )
+
             write = Write(
                 "cancel", patient_id, idempotency_key, appointment_id=appointment.appointment_id, slot_id=appointment.slot_id
             )
-            written = await write_until_settled(self.ehr.audit_log, write, cancel, is_cancelled)
+            written = await write_until_settled(self.ehr.audit_log, write, cancel, is_cancelled, release)
             if written.outcome == "succeeded":
                 cancelled = f"Your {_details(appointment)} is cancelled. {ANYTHING_ELSE}"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(cancelled)

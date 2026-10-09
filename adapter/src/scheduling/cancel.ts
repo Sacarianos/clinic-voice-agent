@@ -66,3 +66,48 @@ export function cancel(fhir: FhirClient, request: CancelRequest, now: Date): Pro
 // held for it. Once anyone else has written the Slot, it is theirs.
 const isStillHeldFor = (slot: Slot, appointment: Appointment) =>
   slot.status === "busy" && Date.parse(slot.meta!.lastUpdated!) <= Date.parse(appointment.meta!.lastUpdated!);
+
+const RELEASED_FROM_CANCEL = "https://clinic.example/fhir/StructureDefinition/appointment-released-from-cancel";
+
+export type ReleaseFromCancelRejection = "write_landed" | "appointment_not_found";
+
+export type ReleaseFromCancelResult = WriteOutcome<object, ReleaseFromCancelRejection>;
+
+// Settles a Cancel that failed after an unknown answer: it may have landed, in full or in part, or
+// still be on its way to the EHR. Releasing changes a booked Appointment, so a Cancel still on its
+// way, guarded by the Appointment version it read, can never commit. Succeeded means the Appointment
+// stays booked. A Cancel that did land is finished, freeing its Slot if only part of it landed, and
+// answers rejected with write_landed.
+export async function releaseFromCancel(
+  fhir: FhirClient,
+  request: CancelRequest,
+  now: Date,
+): Promise<ReleaseFromCancelResult> {
+  const released = await versionGuardedWrite<ReleaseFromCancelResult>(async () => {
+    const appointment = await readPatientsAppointment(fhir, request.patientId, request.appointmentId);
+    if (!appointment) return { outcome: "rejected", reason: "appointment_not_found" };
+    if (appointment.status === "cancelled") return { outcome: "rejected", reason: "write_landed" };
+    const result = await fhir.transaction({
+      resourceType: "Bundle",
+      type: "transaction",
+      entry: [
+        {
+          resource: releasedFromCancel(appointment, request.idempotencyKey),
+          request: { method: "PUT", url: `Appointment/${appointment.id}`, ifMatch: `W/"${appointment.meta?.versionId}"` },
+        },
+      ],
+    });
+    if (result.status === "committed") return { outcome: "succeeded" };
+    if (result.status === "conflict") return "conflict";
+    return { outcome: result.status };
+  });
+  if (released.outcome !== "rejected" || released.reason !== "write_landed") return released;
+  const finished = await cancel(fhir, request, now);
+  return finished.outcome === "failed" || finished.outcome === "unknown" ? { outcome: finished.outcome } : released;
+}
+
+function releasedFromCancel(appointment: Appointment, idempotencyKey: string): Appointment {
+  const { extension = [], ...rest } = appointment;
+  const others = extension.filter((item) => item.url !== RELEASED_FROM_CANCEL);
+  return { ...rest, extension: [...others, { url: RELEASED_FROM_CANCEL, valueString: idempotencyKey }] };
+}

@@ -7,8 +7,9 @@ counts as succeeded, and anything less as failed. The adapter finishes a half-ap
 the same write comes again, so the retry is safe either way.
 
 A write that came back unknown may still be on its way to the EHR, or have left its Slot held. So
-before such a write is given up as failed, its Slot is released: freed if the write holds it, and
-changed so the write can never land later. Only then is the Caller told nothing was done.
+before such a write is given up as failed, it is released. A Book or Reschedule's Slot is freed if
+the write holds it, and changed so the write can never land later. A Cancel's Appointment is changed
+the same way. Only then is the Caller told nothing was done.
 """
 
 from collections.abc import Awaitable, Callable
@@ -25,7 +26,7 @@ ATTEMPTS = 2
 # Each is_done reads the EHR at most this often. Cancel's reads twice, Book's and Reschedule's once.
 MAX_RECONCILE_READS = 2
 
-# The slowest write: every attempt sent and re-read, then the Slot released and the Callback Request filed.
+# The slowest write: every attempt sent and re-read, then released, and the Callback Request filed.
 WRITE_TOOL_TIMEOUT_SECS = tool_timeout(ATTEMPTS * (1 + MAX_RECONCILE_READS) + 1 + FILING_ATTEMPTS)
 
 
@@ -38,9 +39,10 @@ async def write_until_settled(
 ) -> WriteOutcome:
     """Sends the write, and once more unless it settled. Each call of `send` must send the same idempotency key.
 
-    is_done reads the EHR and says whether everything the write was for is in place. release, for a
-    write that takes a Slot, releases that Slot from it (EhrAdapter.release_slot). Every attempt is
-    recorded in the audit log exactly once, including one that raises or is cancelled.
+    is_done reads the EHR and says whether everything the write was for is in place. release makes sure
+    the write never lands later: EhrAdapter.release_slot for a Book or Reschedule, and
+    EhrAdapter.release_from_cancel for a Cancel. Every attempt is recorded in the audit log exactly once,
+    including one that raises or is cancelled.
     """
     answered_unknown = False
     for attempt in range(1, ATTEMPTS + 1):
@@ -79,7 +81,7 @@ async def _reconcile(is_done: Callable[[], Awaitable[bool]]) -> WriteOutcome:
 
 
 async def _released(audit_log: AuditLog, write: Write, release: Callable[[], Awaitable[WriteOutcome]]) -> WriteOutcome:
-    """What a write that seemed to fail after an unknown answer turns out to be, once its Slot is released."""
+    """What a write that seemed to fail after an unknown answer turns out to be, once it is released."""
     released: WriteOutcome | None = None
     error: str | None = None
     try:
@@ -91,7 +93,13 @@ async def _released(audit_log: AuditLog, write: Write, release: Callable[[], Awa
         raise
     finally:
         audit_log.record(
-            Write("release_slot", write.patient_id, write.idempotency_key, slot_id=write.slot_id),
+            Write(
+                "release_from_cancel" if write.action == "cancel" else "release_slot",
+                write.patient_id,
+                write.idempotency_key,
+                appointment_id=write.appointment_id if write.action == "cancel" else None,
+                slot_id=write.slot_id,
+            ),
             attempt=1,
             outcome=released.outcome if released else "error",
             reason=(released.reason if released else None) or error,

@@ -176,6 +176,14 @@ class EhrAdapter:
         """
         return await self._write(f"/slots/{slot_id}/release", {"idempotencyKey": idempotency_key})
 
+    async def release_from_cancel(self, *, patient_id: str, appointment_id: str, idempotency_key: str) -> WriteOutcome:
+        """Settles a Cancel given up on after an unknown answer: makes sure it never lands later.
+
+        succeeded: the Appointment stays booked. rejected with write_landed: the Cancel landed, and is now finished.
+        """
+        body = {"patientId": patient_id, "idempotencyKey": idempotency_key}
+        return await self._write(f"/appointments/{appointment_id}/cancel/release", body)
+
     async def _write(self, path: str, body: dict) -> WriteOutcome:
         try:
             response = await self._request("POST", path, json=body)
