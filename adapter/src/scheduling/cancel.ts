@@ -1,8 +1,14 @@
 import type { Appointment, Bundle, Slot } from "fhir/r4";
 import type { FhirClient } from "../fhir/client.ts";
 import { versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
-import { appointmentDetails, readPatientsAppointment, slotIdOf, type AppointmentDetails } from "./appointments.ts";
-import { loadProviders } from "./providers.ts";
+import {
+  appointmentDetails,
+  readPatientsAppointment,
+  scheduleIdOf,
+  slotIdOf,
+  type AppointmentDetails,
+} from "./appointments.ts";
+import { loadProviderOfSchedule } from "./providers.ts";
 import { freed } from "./slot-holds.ts";
 
 export type CancelRequest = {
@@ -24,7 +30,8 @@ export function cancel(fhir: FhirClient, request: CancelRequest, now: Date): Pro
     if (!appointment) return { outcome: "rejected", reason: "appointment_not_found" };
     const slot = await fhir.read<Slot>("Slot", slotIdOf(appointment));
     if (!slot) throw new Error(`Appointment ${appointment.id} has no Slot`);
-    const providers = await loadProviders(fhir);
+    // Its Provider may no longer take new Appointments, but this one can still be cancelled.
+    const providers = await loadProviderOfSchedule(fhir, scheduleIdOf(slot));
     const cancelled: Appointment = { ...appointment, status: "cancelled" };
     const succeeded = () => ({ outcome: "succeeded" as const, appointment: appointmentDetails(cancelled, slot, providers) });
     const freeSlot = {

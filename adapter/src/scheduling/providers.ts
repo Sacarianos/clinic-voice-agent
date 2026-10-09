@@ -1,4 +1,4 @@
-import type { HumanName, Practitioner, Schedule } from "fhir/r4";
+import type { FhirResource, HumanName, Practitioner, Schedule } from "fhir/r4";
 import { PROVIDER_SYSTEM } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
 
@@ -19,6 +19,17 @@ export async function loadProviders(fhir: FhirClient): Promise<Providers> {
     _include: "Schedule:actor",
     _count: "200",
   });
+  return providersIn(resources);
+}
+
+// The Provider of one Schedule, whether or not it still takes new Appointments.
+export async function loadProviderOfSchedule(fhir: FhirClient, scheduleId: string): Promise<Providers> {
+  const resources = await fhir.search<Schedule | Practitioner>("Schedule", { _id: scheduleId, _include: "Schedule:actor" });
+  return providersIn(resources);
+}
+
+// The Providers of the Schedules among these resources, from the Practitioners among them.
+export function providersIn(resources: FhirResource[]): Providers {
   const practitioners = new Map<string, Provider>();
   for (const resource of resources) {
     if (resource.resourceType !== "Practitioner") continue;

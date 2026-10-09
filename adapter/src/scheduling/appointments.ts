@@ -1,8 +1,8 @@
-import type { Appointment, Slot } from "fhir/r4";
+import type { Appointment, Practitioner, Schedule, Slot } from "fhir/r4";
 import { bookingWindow, isInBookingWindow } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
 import { offeredSlot } from "./find-slots.ts";
-import { loadProviders, type Provider, type Providers } from "./providers.ts";
+import { providersIn, type Provider, type Providers } from "./providers.ts";
 import { isHeldFor } from "./slot-holds.ts";
 
 export const VISIT_TYPES = {
@@ -27,20 +27,24 @@ export type AppointmentDetails = {
   visitType: VisitType;
 };
 
-// The Patient's booked Appointments that haven't started yet, earliest first.
+// The Patient's booked Appointments that haven't started yet, earliest first. One search brings each
+// Appointment's Slot, Schedule and Practitioner along, so every Appointment has its Provider: also one
+// who no longer takes new Appointments, and one whose records are removed while this runs.
 export async function listAppointments(fhir: FhirClient, patientId: string, now: Date): Promise<AppointmentDetails[]> {
-  const resources = await fhir.search<Appointment | Slot>("Appointment", {
-    patient: `Patient/${patientId}`,
-    status: "booked",
-    date: `ge${now.toISOString()}`,
-    _sort: "date",
-    _include: "Appointment:slot",
-    _count: "50",
-  });
+  const resources = await fhir.search<Appointment | Slot | Schedule | Practitioner>("Appointment", [
+    ["patient", `Patient/${patientId}`],
+    ["status", "booked"],
+    ["date", `ge${now.toISOString()}`],
+    ["_sort", "date"],
+    ["_include", "Appointment:slot"],
+    ["_include:iterate", "Slot:schedule"],
+    ["_include:iterate", "Schedule:actor"],
+    ["_count", "50"],
+  ]);
   const slots = new Map(
     resources.filter((resource): resource is Slot => resource.resourceType === "Slot").map((slot) => [slot.id!, slot]),
   );
-  const providers = await loadProviders(fhir);
+  const providers = providersIn(resources);
   return resources
     .filter((resource): resource is Appointment => resource.resourceType === "Appointment")
     .filter((appointment) => new Date(appointment.start!) >= now)
