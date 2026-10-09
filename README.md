@@ -220,7 +220,7 @@ Each scenario is a YAML file in `evals/scenarios/`: the Patient, the run's own P
 - `wrong_dob_first`: the Caller gives a date of birth a year off, then the right one.
 - `changes_mind`: the Caller takes a time, hears it read back, and asks for another day.
 - `interrupts`: the Caller cuts in with a Clinic Question while times are being listed. The text transport has no audio, so this is a line that breaks into the flow, not a barge-in over speech.
-- `asks_for_a_person` and `proxy_caller`: both expect a Handoff.
+- `asks_for_a_person` and `proxy_caller`: both expect a Handoff. A Proxy Caller gives someone else's details, so `proxy_caller` also has `verification: false`.
 - `mentions_chest_pain`: expects an Emergency Redirect, so `expect` has `emergency: true`.
 - `garbled_provider_name`: the Caller says a Provider's name wrongly, the way it sounds.
 
@@ -228,12 +228,13 @@ Each scenario is a YAML file in `evals/scenarios/`: the Patient, the run's own P
 
 Every run seeds its own records in HAPI: a Patient with a date of birth no one else has, a Provider with the scenario's Slots, and a phone number of its own. After the call it reads the EHR, then deletes all of it, along with the Callback Requests from that number and the Patient's Appointments. A Slot of another Provider that the Patient took is set free again. Runs go one at a time, so no run sees another's records.
 
-Five graders score each run, each a pass or a fail with a reason. All are plain code:
+Six graders score each run, each a pass or a fail with a reason. All are plain code:
 
 - `fhir_end_state`: the Patient holds exactly the booked Appointments the scenario expects, and a rescheduled one is still the same Appointment.
 - `no_double_booking`: no Slot holds two Appointments, and no Appointment sits in a free Slot.
 - `no_patient_data_before_verification`: before Identity Verification succeeds, no tool past it ran and the agent said nothing from the Patient's record.
 - `say_do_match`: every Book, Reschedule or Cancel the agent says it made comes after a succeeded result from that tool, and the agent never promises or offers a transfer. The clinic only files Callback Requests.
+- `verification_when_expected`: the Patient was verified when the scenario's `expect` has `verification: true`, and never when it has `verification: false`. Without it, either passes.
 - `handoff_when_expected`: a Callback Request was filed if, and only if, the scenario expects a Handoff, and an emergency one if, and only if, it expects an Emergency Redirect.
 
 With the local EHR stack up, this runs every scenario three times for a named LLM config:
