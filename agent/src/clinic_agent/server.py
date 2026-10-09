@@ -12,9 +12,10 @@ import hmac
 import os
 import sys
 import uuid
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 from xml.sax.saxutils import quoteattr
 
 import uvicorn
@@ -52,6 +53,10 @@ PHONE_SAMPLE_RATE = 8000
 BROWSER_IN_SAMPLE_RATE = 16000
 BROWSER_OUT_SAMPLE_RATE = 24000
 DEFAULT_PORT = 8765
+# The page pings every second. A browser call ends this long after the last ping, hung up or not.
+BROWSER_GONE_AFTER_SECS = 5
+# How long Pipecat's SmallWebRTCConnection.is_connected() stays true after the last ping.
+_PING_FRESH_SECS = 3
 
 
 @dataclass(frozen=True)
@@ -81,10 +86,16 @@ def create_app(
     # Tests wait for this to drop back to 0 after hanging up, so they don't tear a call down mid-cleanup.
     app.state.calls_in_progress = 0
 
-    async def run_call(transport: BaseTransport, params: PipelineParams, conversation_id: str, caller_phone: str | None):
+    async def run_call(
+        transport: BaseTransport,
+        params: PipelineParams,
+        conversation_id: str,
+        caller_phone: str | None,
+        gone: Coroutine[Any, Any, None] | None = None,
+    ):
         app.state.calls_in_progress += 1
         try:
-            await _run_call(make_services(), transport, params, conversation_id, caller_phone, tracing=tracing)
+            await _run_call(make_services(), transport, params, conversation_id, caller_phone, gone, tracing=tracing)
         finally:
             app.state.calls_in_progress -= 1
 
@@ -122,7 +133,7 @@ def _add_browser_routes(app: FastAPI, webrtc: SmallWebRTCRequestHandler, run_cal
                 enable_usage_metrics=True,
             )
             # A browser has no caller ID, so a Callback Request asks the Caller for a number.
-            task = asyncio.create_task(run_call(transport, params, str(session_id), None))
+            task = asyncio.create_task(run_call(transport, params, str(session_id), None, _gone(connection)))
             calls.add(task)
             task.add_done_callback(calls.discard)
 
@@ -191,10 +202,14 @@ async def _run_call(
     params: PipelineParams,
     conversation_id: str,
     caller_phone: str | None,
+    gone: Coroutine[Any, Any, None] | None,
     *,
     tracing: bool,
 ) -> None:
-    """One call, from the Caller connecting to hanging up. Traced as one conversation keyed by conversation_id."""
+    """One call, from the Caller connecting to hanging up. Traced as one conversation keyed by conversation_id.
+
+    gone, when given, returns once the Caller has left without the transport noticing. The call then ends.
+    """
     call = build_call(
         llm=services.llm,
         hear=[transport.input(), services.stt],
@@ -215,17 +230,50 @@ async def _run_call(
         starting.append(asyncio.current_task())
         await start_conversation(call, services.ehr, caller_phone)
 
-    @transport.event_handler("on_client_disconnected")
-    async def on_client_disconnected(transport, client):
+    async def caller_left():
         # Starting the conversation waits until the greeting has been spoken. If the Caller hangs up
         # first, it never is, and the transport would wait for that start forever before shutting down.
         for task in starting:
             task.cancel()
         await call.worker.cancel()
 
+    @transport.event_handler("on_client_disconnected")
+    async def on_client_disconnected(transport, client):
+        await caller_left()
+
+    async def watch_for_a_silent_exit():
+        await gone
+        logger.info("The Caller stopped answering without hanging up. Ending the call.")
+        await caller_left()
+
+    watching = asyncio.create_task(watch_for_a_silent_exit()) if gone else None
     runner = WorkerRunner(handle_sigint=False)  # uvicorn owns the signals
     await runner.add_workers(call.worker)
-    await runner.run()
+    try:
+        await runner.run()
+    finally:
+        if watching:
+            watching.cancel()
+
+
+async def _gone(connection: SmallWebRTCConnection) -> None:
+    """Returns once the browser has sent no ping for BROWSER_GONE_AFTER_SECS.
+
+    A page's hang-up reaches the server as one UDP datagram, which can go missing, and a laptop that sleeps
+    or drops off the network sends none. Without this the call would run on until ICE gives up, about 30 s on.
+    """
+    while not connection.is_connected():
+        await asyncio.sleep(0.5)
+    loop = asyncio.get_running_loop()
+    stale_since = None
+    while True:
+        await asyncio.sleep(0.5)
+        if connection.is_connected():
+            stale_since = None
+        elif stale_since is None:
+            stale_since = loop.time()
+        elif loop.time() - stale_since >= BROWSER_GONE_AFTER_SECS - _PING_FRESH_SECS:
+            return
 
 
 def _latency_log() -> UserBotLatencyObserver:

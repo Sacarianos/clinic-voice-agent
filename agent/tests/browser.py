@@ -71,14 +71,20 @@ class Browser:
         speaker = await asyncio.wait_for(self._speaker, seconds)
         await asyncio.wait_for(speaker.recv(), seconds)
 
-    async def hang_up(self, seconds: float = 10) -> None:
-        """Closes the call the way the page's disconnect button does, then waits for the server to finish it."""
+    def go_quiet(self) -> None:
+        """Stops pinging, as a page does when the laptop sleeps or the network drops, without hanging up."""
         if self._keepalive:
             self._keepalive.cancel()
-        # The close runs on its own while the server ends the call. Its last step can hang: about 1 run in 25 on
-        # Windows, aioice waits forever for a UDP socket it closed to report closed. Under a loaded full suite
-        # the steps before it can take over 2 s, and a close cut short there never sends the DTLS goodbye, so
-        # the server never hears the hang-up. So the close is only dropped once the server has ended the call.
+
+    async def hang_up(self, seconds: float = 10) -> None:
+        """Closes the call the way the page's disconnect button does, then waits for the server to finish it.
+
+        The goodbye is one UDP datagram and can go missing; then the server ends the call once the pings stop.
+        """
+        self.go_quiet()
+        # The close runs on its own while the server ends the call. Its last step can hang on Windows: aioice
+        # waits forever for a UDP socket it closed to report closed. So the close is dropped only once the
+        # server has ended the call.
         closing = asyncio.create_task(self._peer.close())
         await self._http.aclose()
         try:

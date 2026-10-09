@@ -13,7 +13,7 @@ from clinic_agent.conversation import GREETING
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.escalation import ASK_FOR_CALLBACK_NUMBER
 from clinic_agent.phi import PHI
-from clinic_agent.server import create_app
+from clinic_agent.server import BROWSER_GONE_AFTER_SECS, create_app
 from clinic_agent.services import VoiceServices
 
 # Greeting and waiting for the Caller never reach the EHR.
@@ -59,6 +59,20 @@ async def test_a_browser_caller_who_hangs_up_while_the_agent_is_talking_ends_the
     await browser.connect()
     await browser.hear()
     await browser.hang_up(seconds=2)
+
+
+async def test_a_browser_that_stops_answering_without_hanging_up_is_hung_up_within_seconds():
+    # A closed laptop or a dropped network: the page stops pinging, and its goodbye never arrives.
+    app = create_app(_greeting_only)
+    browser = Browser(app)
+
+    try:
+        await browser.connect()
+        await browser.hear()
+        browser.go_quiet()
+        await browser.call_ended(seconds=BROWSER_GONE_AFTER_SECS + 3)
+    finally:
+        await browser.hang_up()
 
 
 async def test_a_browser_caller_who_asks_for_a_person_is_called_back_at_the_number_they_give(ehr, ehr_adapter_url):
