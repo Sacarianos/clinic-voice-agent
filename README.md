@@ -143,7 +143,7 @@ uv run --env-file ../.env clinic-voice-server
 2. Leave the transport menu at the top on SmallWebRTC and click Connect.
 3. The browser asks to use your microphone. Allow it. Use headphones, or the agent may hear itself and cut itself off.
 4. The agent greets you. Talk as a Caller would. The Conversation panel shows both sides as text, and the Events panel at the bottom logs what the page and the server send each other.
-5. Click Disconnect to hang up. The agent also hangs up by itself after a Handoff or an Emergency Redirect.
+5. Click Disconnect to hang up. The agent also hangs up by itself after a Handoff or an Emergency Redirect. The page pings the server every second, so a closed tab or a sleeping laptop ends the call 5 seconds after its last ping.
 
 The message box under the conversation sends a typed line instead of speech. It skips VAD and STT, so a typed turn gets no latency breakdown. It helps when no microphone is at hand, and the agent still speaks its answers.
 
