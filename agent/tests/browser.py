@@ -1,6 +1,6 @@
 """Plays the browser's side of a browser call, the way Pipecat's prebuilt page does, with aiortc in place of Chrome.
 
-The page asks the server for a session (`POST /start`), then sends a WebRTC offer with the microphone
+The page asks the server for a session with `POST /start`, then sends a WebRTC offer with the microphone
 track to `/sessions/<id>/api/offer`. The microphone here is silent: tests stand a scripted Caller in for STT.
 """
 

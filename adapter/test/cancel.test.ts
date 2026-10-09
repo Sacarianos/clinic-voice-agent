@@ -4,6 +4,7 @@ import { startAdapter, type Adapter } from "./support/adapter.ts";
 import {
   clinicIso,
   clinicTime,
+  closeSchedule,
   createAppointment,
   createPatient,
   createProvider,
@@ -61,6 +62,22 @@ describe("Cancel", () => {
     expect((await readAppointment(appointmentId)).status).toBe("cancelled");
     expect((await readSlot(slotId)).status).toBe("free");
     expect((await adapter.get("/appointments", { patientId })).body.appointments).toEqual([]);
+  });
+
+  test("cancels an Appointment with a Provider who no longer takes new ones", async () => {
+    const leaving = await createProvider({ given: "Ambrose", family: "Kettering" });
+    const slotId = await createSlot(leaving, clinicTime(4, "10:00"));
+    const appointmentId = (
+      await adapter.post("/appointments", { patientId, slotId, visitType: "follow_up", idempotencyKey: randomUUID() })
+    ).body.appointment.appointmentId;
+    await closeSchedule(leaving);
+
+    const response = await cancel(appointmentId);
+
+    expect(response.status).toBe(200);
+    expect(response.body.outcome).toBe("succeeded");
+    expect(response.body.appointment.providerName).toBe("Dr. Ambrose Kettering");
+    expect((await readAppointment(appointmentId)).status).toBe("cancelled");
   });
 
   test("cancelling twice returns succeeded both times", async () => {

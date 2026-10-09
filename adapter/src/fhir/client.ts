@@ -28,7 +28,7 @@ export type FhirClient = {
 export type TransactionResult =
   // Every entry was written. The response bundle has one entry per request entry, in order.
   | { status: "committed"; response: Bundle }
-  // A version guard (ifMatch) or a racing write stopped it. Nothing was written.
+  // An ifMatch version guard or a racing write stopped it. Nothing was written.
   | { status: "conflict" }
   // Nothing was written: the EHR couldn't be reached, or it answered with an error and rolled back.
   | { status: "failed" }

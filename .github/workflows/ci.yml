@@ -41,6 +41,30 @@ jobs:
       - name: Build the adapter image
         run: docker build --tag clinic-ehr-adapter .
 
+  seed:
+    name: Seeded clinic in HAPI
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: fhir
+    steps:
+      - uses: actions/checkout@v7
+      # The local stack as a developer runs it: Synthea generates the Patients and the seed loads them into HAPI.
+      - name: Start HAPI and seed it
+        run: docker compose -f ../infra/compose.yaml up -d --wait --build hapi seed
+      # setup-uv publishes no floating v10 tag, so pin the v10.2.0 commit.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          enable-cache: true
+          cache-dependency-glob: fhir/uv.lock
+      - run: uv sync --frozen
+      - run: uv run pytest
+        env:
+          FHIR_BASE_URL: http://localhost:8080/fhir
+      - name: Show the stack's logs
+        if: failure()
+        run: docker compose -f ../infra/compose.yaml logs --no-color synthea seed hapi
+
   agent:
     name: Voice agent against the adapter and HAPI
     runs-on: ubuntu-24.04

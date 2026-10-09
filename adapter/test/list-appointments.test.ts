@@ -8,6 +8,7 @@ import {
   createPatient,
   createProvider,
   createSlot,
+  closeSchedule,
   unusedBirthDate,
   type TestProvider,
 } from "./support/ehr.ts";
@@ -64,6 +65,21 @@ test("List appointments returns only the Patient's upcoming appointments, earlie
       },
     ],
   });
+});
+
+test("an Appointment with a Provider who no longer takes new ones is still listed, with that Provider", async () => {
+  const leaving = await createProvider({ given: "Ambrose", family: "Kettering" });
+  const patientId = await createPatient({ given: ["Rosalind"], family: "Okonkwo", birthDate: await unusedBirthDate() });
+  const slotId = await createSlot(leaving, clinicTime(4, "10:00"));
+  const appointmentId = await book(patientId, slotId, "follow_up");
+  await closeSchedule(leaving);
+
+  const response = await adapter.get("/appointments", { patientId });
+
+  expect(response.status).toBe(200);
+  expect(response.body.appointments).toEqual([
+    expect.objectContaining({ appointmentId, providerId: leaving.providerId, providerName: "Dr. Ambrose Kettering" }),
+  ]);
 });
 
 test("a Patient with no upcoming appointments gets an empty list", async () => {

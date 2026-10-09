@@ -15,12 +15,13 @@ def at_clinic_time(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(CLINIC_TZ)
 
 
-def test_every_provider_has_free_half_hour_slots_from_8_to_5_on_every_weekday_in_the_booking_window(fhir):
-    schedules = fhir.search("Schedule")
+def test_every_provider_has_half_hour_slots_from_8_to_5_on_every_weekday_in_the_booking_window(fhir, seeded_today):
+    schedules = fhir.seeded("Schedule")
     assert len(schedules) == 3
 
     for schedule in schedules:
-        slots = fhir.search(f"Slot?status=free&schedule=Schedule/{schedule['id']}")
+        # Other suites may have booked some of them, so this counts every Slot the seed made, free or busy.
+        slots = fhir.seeded("Slot", f"schedule=Schedule/{schedule['id']}")
         starts = sorted(at_clinic_time(s["start"]) for s in slots if at_clinic_time(s["start"]).date() in set(booking_window_weekdays()))
         expected = [
             datetime.combine(day, datetime.min.time(), CLINIC_TZ) + offset
@@ -31,14 +32,14 @@ def test_every_provider_has_free_half_hour_slots_from_8_to_5_on_every_weekday_in
 
 
 def test_every_slot_lasts_thirty_minutes(fhir):
-    slots = fhir.search("Slot?status=free")
+    slots = fhir.seeded("Slot")
 
     assert slots
     assert {at_clinic_time(s["end"]) - at_clinic_time(s["start"]) for s in slots} == {timedelta(minutes=30)}
 
 
 def test_there_are_no_slots_on_weekends_or_outside_clinic_hours(fhir):
-    slots = fhir.search("Slot")
+    slots = fhir.seeded("Slot")
 
     assert slots
     for slot in slots:

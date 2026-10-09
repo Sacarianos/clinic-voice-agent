@@ -1,6 +1,6 @@
 import type { Appointment, Slot } from "fhir/r4";
 import type { FhirClient } from "../fhir/client.ts";
-import { versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
+import { commitGuarded, guardedPut, versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
 import { isHeldFor, released } from "./slot-holds.ts";
 
 export type ReleaseSlotRejection = "write_landed" | "slot_not_found";
@@ -21,19 +21,7 @@ export function releaseSlot(fhir: FhirClient, slotId: string, idempotencyKey: st
     if (slot.status === "busy" && !heldForThisWrite) return { outcome: "succeeded" };
     if (heldForThisWrite && (await bookedIn(fhir, slotId))) return { outcome: "rejected", reason: "write_landed" };
 
-    const result = await fhir.transaction({
-      resourceType: "Bundle",
-      type: "transaction",
-      entry: [
-        {
-          resource: released(slot, idempotencyKey),
-          request: { method: "PUT", url: `Slot/${slot.id}`, ifMatch: `W/"${slot.meta?.versionId}"` },
-        },
-      ],
-    });
-    if (result.status === "committed") return { outcome: "succeeded" };
-    if (result.status === "conflict") return "conflict";
-    return { outcome: result.status };
+    return commitGuarded(fhir, [guardedPut(released(slot, idempotencyKey))], () => ({ outcome: "succeeded" as const }));
   });
 }
 

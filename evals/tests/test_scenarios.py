@@ -58,6 +58,7 @@ def test_the_bundled_scenarios_cover_the_twists_a_real_call_brings():
     assert scenarios["mentions_chest_pain"].expect_emergency
     assert not scenarios["mentions_chest_pain"].expect_handoff
     assert scenarios["proxy_caller"].expect_handoff
+    assert scenarios["proxy_caller"].expect_verification is False
     assert scenarios["proxy_caller"].expected_appointments == []
     assert scenarios["interrupts"].expected_appointments
     assert scenarios["garbled_provider_name"].expected_appointments

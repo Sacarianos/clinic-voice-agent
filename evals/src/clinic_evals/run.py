@@ -61,6 +61,7 @@ async def run_scenario(
         error,
         list(noise),
         turn_secs,
+        list(call.llm_ttfb_secs),
         _token_usage(llm, call.llm_usage),
     )
 

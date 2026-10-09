@@ -1,7 +1,7 @@
 """The eval report, built from saved batch documents: one column per LLM config.
 
 A batch document is what `evals.py` saves for a run: the config, its model, the noise rate and every
-run's grades, per-turn times, tool times and token usage.
+run's grades, per-turn times, the LLM's time to first token on each of its runs, tool times and token usage.
 """
 
 import json
@@ -47,6 +47,7 @@ def format_report(documents: list[dict]) -> str:
     rows += [(name, [_pass_rate(d, name) for d in documents]) for name in GRADERS]
     rows += [
         ("turn latency P50 / P95", [_range(_turns(d), "{:.1f} s") for d in documents]),
+        ("LLM time to first token P50 / P95", [_range(_first_tokens(d), "{:.2f} s") for d in documents]),
         ("tool time P50 / P95", [_range(_tool_times(d), "{:.2f} s") for d in documents]),
         ("cost per call", [_cost_per_call(d) for d in documents]),
         ("tokens per call (in / out)", [_tokens_per_call(d) for d in documents]),
@@ -65,6 +66,10 @@ def _pass_rate(document: dict, grader: str) -> str:
 
 def _turns(document: dict) -> list[float]:
     return [secs for run in document["runs"] for secs in run.get("turn_secs", [])]
+
+
+def _first_tokens(document: dict) -> list[float]:
+    return [secs for run in document["runs"] for secs in run.get("llm_ttfb_secs", [])]
 
 
 def _tool_times(document: dict) -> list[float]:

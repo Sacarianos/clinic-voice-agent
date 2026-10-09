@@ -15,11 +15,14 @@ class Price:
     cache_write: float
 
 
-# Anthropic's list prices. A config whose model isn't here reports tokens but no cost, rather than a guess.
-# Haiku 5.5 has a second rate card for prompts over 100K tokens ($0.50 / $2.50). A call here never gets near that.
+# List prices. A config whose model isn't here reports tokens but no cost, rather than a guess.
+# Haiku 5.5 has a second rate card, $0.50 / $2.50, for prompts over 100K tokens. A call here never gets near that.
+# Gemini is OpenRouter's price, read from openrouter.ai/google/gemini-3.6-flash on 2026-10-09. That page lists no
+# cache rates, so cached tokens count at the full input rate, which can only overstate the cost.
 PRICES = {
     "claude-haiku-4-5": Price(input=1.00, output=5.00, cache_read=0.10, cache_write=1.25),
     "claude-haiku-5-5": Price(input=0.10, output=0.50, cache_read=0.01, cache_write=0.125),
+    "google/gemini-3.6-flash": Price(input=0.75, output=3.75, cache_read=0.75, cache_write=0.75),
 }
 
 

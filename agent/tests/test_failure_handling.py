@@ -229,6 +229,21 @@ async def test_a_cancel_that_timed_out_but_landed_is_found_by_re_reading_and_not
         assert "cancelled" in call.agent_lines[-1]
 
 
+async def test_a_cancel_the_ehr_applies_after_the_agent_stopped_waiting_is_never_reported_as_not_cancelled(
+    ehr, start_call, faulty_adapter
+):
+    faulty_adapter.inject("stalled_write", into=CANCEL)
+    faulty_adapter.inject("server_error", into=CANCEL)
+    async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):
+        reply = await call.say("Yes.")
+        # The adapter gave up on the stalled Cancel before the agent said anything, so by now it has had its chance to land.
+        await asyncio.sleep(STALLED_WRITE_LANDS_AFTER_SECS + 2)
+
+        assert "wasn't able to cancel" in reply
+        assert ehr.appointment(appointment_id)["status"] == "booked"
+        assert ehr.slot_status(slot_id) == "busy"
+
+
 async def test_a_cancel_that_fails_twice_hands_off_and_leaves_the_appointment_booked(ehr, start_call, faulty_adapter):
     faulty_adapter.inject("server_error", into=CANCEL, times=2)
     async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):

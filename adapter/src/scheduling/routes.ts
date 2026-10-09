@@ -4,7 +4,7 @@ import type { FhirClient } from "../fhir/client.ts";
 import { validJson, validQuery } from "../http.ts";
 import { listAppointments, VISIT_TYPES, type VisitType } from "./appointments.ts";
 import { book } from "./book.ts";
-import { cancel } from "./cancel.ts";
+import { cancel, releaseFromCancel } from "./cancel.ts";
 import { findSlots, readSlot } from "./find-slots.ts";
 import { loadProviders } from "./providers.ts";
 import { releaseSlot } from "./release-slot.ts";
@@ -74,5 +74,10 @@ export function appointmentRoutes(fhir: FhirClient) {
     )
     .post("/:appointmentId/cancel", validJson(cancelBody), async (c) =>
       c.json(await cancel(fhir, { ...c.req.valid("json"), appointmentId: c.req.param("appointmentId") }, new Date())),
+    )
+    .post("/:appointmentId/cancel/release", validJson(cancelBody), async (c) =>
+      c.json(
+        await releaseFromCancel(fhir, { ...c.req.valid("json"), appointmentId: c.req.param("appointmentId") }, new Date()),
+      ),
     );
 }

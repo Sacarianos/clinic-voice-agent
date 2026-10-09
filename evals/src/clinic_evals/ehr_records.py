@@ -8,14 +8,13 @@ another Provider that the run's Patient took is freed again.
 import random
 import uuid
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import httpx
 
+from clinic_agent.clinic import CLINIC_TIMEZONE
 from clinic_evals.record import AppointmentState, CallbackRequest, EndState, Seeded, SlotState
 from clinic_evals.scenario import Scenario, SlotSpec
 
-CLINIC_TIMEZONE = ZoneInfo("America/New_York")
 PROVIDER_SYSTEM = "https://clinic.example/fhir/identifier/provider"
 VISIT_TYPE_SYSTEM = "https://clinic.example/fhir/CodeSystem/visit-type"
 SLOT_LENGTH = timedelta(minutes=30)

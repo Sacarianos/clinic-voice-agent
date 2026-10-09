@@ -1,12 +1,20 @@
-"""Facts about the fictional clinic that the seed and its tests share."""
+"""Facts about the fictional clinic that the seed and its tests share.
 
+The clinic's hours, time zone, Booking Window and Providers come from clinic.json at the repo root, which
+the adapter and the agent read too. In Docker the file is mounted at /clinic.json.
+"""
+
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
-CLINIC_TIMEZONE = "America/New_York"
-OPENING_HOUR = 8
-CLOSING_HOUR = 17
-SLOT_MINUTES = 30
-BOOKING_WINDOW_DAYS = 14
+_CLINIC = json.loads((Path(__file__).resolve().parents[3] / "clinic.json").read_text(encoding="utf-8"))
+
+CLINIC_TIMEZONE: str = _CLINIC["timezone"]
+OPENING_HOUR: int = _CLINIC["openingHour"]
+CLOSING_HOUR: int = _CLINIC["closingHour"]
+SLOT_MINUTES: int = _CLINIC["slotMinutes"]
+BOOKING_WINDOW_DAYS: int = _CLINIC["bookingWindowDays"]
 
 SYSTEM_BASE = "https://clinic.example/fhir/identifier"
 MRN_SYSTEM = f"{SYSTEM_BASE}/mrn"
@@ -26,8 +34,6 @@ class Provider:
 
 
 # Szczepanski and Kowalczyk are the surnames speech-to-text is most likely to mangle.
-PROVIDERS = (
-    Provider("whitfield", "Marcus", "Whitfield", "Dr.", "MD", "Doctor of Medicine"),
-    Provider("szczepanski", "Wojciech", "Szczepanski", "Dr.", "MD", "Doctor of Medicine"),
-    Provider("kowalczyk", "Siobhan", "Kowalczyk", None, "NP", "Nurse Practitioner"),
+PROVIDERS = tuple(
+    Provider(p["key"], p["given"], p["family"], p["prefix"], p["roleCode"], p["roleDisplay"]) for p in _CLINIC["providers"]
 )

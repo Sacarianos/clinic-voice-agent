@@ -1,0 +1,34 @@
+{
+  "timezone": "America/New_York",
+  "timezoneSpoken": "Eastern",
+  "openingHour": 8,
+  "closingHour": 17,
+  "slotMinutes": 30,
+  "bookingWindowDays": 14,
+  "providers": [
+    {
+      "key": "whitfield",
+      "given": "Marcus",
+      "family": "Whitfield",
+      "prefix": "Dr.",
+      "roleCode": "MD",
+      "roleDisplay": "Doctor of Medicine"
+    },
+    {
+      "key": "szczepanski",
+      "given": "Wojciech",
+      "family": "Szczepanski",
+      "prefix": "Dr.",
+      "roleCode": "MD",
+      "roleDisplay": "Doctor of Medicine"
+    },
+    {
+      "key": "kowalczyk",
+      "given": "Siobhan",
+      "family": "Kowalczyk",
+      "prefix": null,
+      "roleCode": "NP",
+      "roleDisplay": "Nurse Practitioner"
+    }
+  ]
+}

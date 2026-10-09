@@ -10,3 +10,5 @@ caller:
 expect:
   appointments: []
   handoff: true
+  # A Proxy Caller's details are someone else's, so they never verify anyone.
+  verification: false

@@ -1,7 +1,7 @@
 """The audit log: one append-only record per attempt to write to the EHR, whatever came of it.
 
-A record says who the write was for (patient id), what it was (action, idempotency key, and the
-Appointment and Slot ids), when it was sent and what the EHR answered. It never holds names, dates of
+A record says who the write was for by patient id, what it was by action, idempotency key and the
+Appointment and Slot ids, when it was sent and what the EHR answered. It never holds names, dates of
 birth, phone numbers or anything the Caller or the agent said, so a reviewer can reconstruct every
 write without reading a transcript.
 
@@ -19,7 +19,9 @@ from typing import Literal
 
 DEFAULT_AUDIT_LOG_PATH = "audit-log.jsonl"
 
-Action = Literal["book", "reschedule", "cancel", "release_slot", "callback_request", "emergency_callback_request"]
+Action = Literal[
+    "book", "reschedule", "cancel", "release_slot", "release_from_cancel", "callback_request", "emergency_callback_request"
+]
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class AuditLog:
     ) -> None:
         """One attempt at `write`.
 
-        outcome is what the EHR adapter answered (succeeded, rejected, failed or unknown), or "error" when
+        outcome is what the EHR adapter answered: succeeded, rejected, failed or unknown. It is "error" when
         the attempt raised, with the error's type as the reason. reason is a code such as slot_taken, never
         free text. reconciled is what re-reading the EHR found after an unknown answer.
         """

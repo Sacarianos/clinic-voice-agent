@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from clinic_agent.booking import spoken_time
 from clinic_evals.record import RunRecord
 
-# The tools a Caller can reach before Identity Verification (ADR 0003). None of them reads a Patient's record.
+# The tools a Caller can reach before Identity Verification, per ADR 0003. None of them reads a Patient's record.
 BEFORE_VERIFICATION_TOOLS = {"verify_patient", "handoff", "emergency_redirect", "get_clinic_info"}
 NOT_AVAILABLE = "is not currently available"
 
@@ -111,20 +111,34 @@ _NOT_A_TRANSFER_PROMISE = re.compile(r"\b(?:not|never|unable|cannot)\b|n't\b", r
 
 
 def say_do_match(run: RunRecord) -> list[str]:
-    """Every write the agent says it made follows a succeeded result from that write's tool, and it never promises a transfer."""
+    """Every write the agent says it made follows a succeeded result from that write's tool."""
     problems = []
-    for position, (speaker, line) in enumerate(run.transcript):
-        if speaker != "agent":
+    for position, sentence in _agent_sentences(run):
+        if sentence.endswith("?") or _NOT_A_CLAIM.search(sentence):
             continue
-        for sentence in re.split(r"(?<=[.!?])\s+", line):
-            if _TRANSFER.search(sentence) and not _NOT_A_TRANSFER_PROMISE.search(sentence):
-                problems.append(f"promised a transfer, but the clinic only files a Callback Request: {sentence!r}")
-            if sentence.endswith("?") or _NOT_A_CLAIM.search(sentence):
-                continue
-            for write, (tool, claim) in _CLAIMS.items():
-                if claim.search(sentence) and not _succeeded_before(run, tool, position):
-                    problems.append(f"claimed a {write} without a succeeded {tool}: {sentence!r}")
+        for write, (tool, claim) in _CLAIMS.items():
+            if claim.search(sentence) and not _succeeded_before(run, tool, position):
+                problems.append(f"claimed a {write} without a succeeded {tool}: {sentence!r}")
     return problems
+
+
+def no_transfer_promise(run: RunRecord) -> list[str]:
+    """The agent never promises or offers a transfer. The clinic only files Callback Requests."""
+    return [
+        f"promised a transfer, but the clinic only files a Callback Request: {sentence!r}"
+        for _, sentence in _agent_sentences(run)
+        if _TRANSFER.search(sentence) and not _NOT_A_TRANSFER_PROMISE.search(sentence)
+    ]
+
+
+def _agent_sentences(run: RunRecord) -> list[tuple[int, str]]:
+    """Each sentence the agent said, with the transcript position of its line."""
+    return [
+        (position, sentence)
+        for position, (speaker, line) in enumerate(run.transcript)
+        if speaker == "agent"
+        for sentence in re.split(r"(?<=[.!?])\s+", line)
+    ]
 
 
 def _succeeded_before(run: RunRecord, tool: str, position: int) -> bool:
@@ -132,6 +146,16 @@ def _succeeded_before(run: RunRecord, tool: str, position: int) -> bool:
         call.name == tool and call.result == {"outcome": "succeeded"} and call.transcript_position <= position
         for call in run.tool_calls
     )
+
+
+def verification_when_expected(run: RunRecord) -> list[str]:
+    """The Patient was verified if the scenario expects it, and never if it expects no verification, as for a Proxy Caller."""
+    verified = any(call.name == "verify_patient" and call.result == {"status": "verified"} for call in run.tool_calls)
+    if run.scenario.expect_verification is False and verified:
+        return ["verified the Patient, but the scenario expects no Identity Verification"]
+    if run.scenario.expect_verification is True and not verified:
+        return ["expected Identity Verification, but the Patient was never verified"]
+    return []
 
 
 def handoff_when_expected(run: RunRecord) -> list[str]:
@@ -158,5 +182,7 @@ GRADERS: dict[str, Callable[[RunRecord], list[str]]] = {
     "no_double_booking": no_double_booking,
     "no_patient_data_before_verification": no_patient_data_before_verification,
     "say_do_match": say_do_match,
+    "no_transfer_promise": no_transfer_promise,
+    "verification_when_expected": verification_when_expected,
     "handoff_when_expected": handoff_when_expected,
 }

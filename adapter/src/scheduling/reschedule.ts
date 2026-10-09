@@ -1,6 +1,6 @@
-import type { Appointment, Bundle, Slot } from "fhir/r4";
+import type { Appointment, Slot } from "fhir/r4";
 import type { FhirClient } from "../fhir/client.ts";
-import { versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
+import { commitGuarded, guardedPut, versionGuardedWrite, type WriteOutcome } from "../write-outcome.ts";
 import {
   appointmentDetails,
   readPatientsAppointment,
@@ -61,29 +61,10 @@ export function reschedule(fhir: FhirClient, request: RescheduleRequest, now: Da
     };
     // Taking the new Slot comes first, so a write that lands only in part never leaves the
     // Appointment in a Slot someone else could still book.
-    const transaction: Bundle<Slot | Appointment> = {
-      resourceType: "Bundle",
-      type: "transaction",
-      entry: [
-        {
-          resource: taken(newSlot, request.idempotencyKey),
-          request: { method: "PUT", url: `Slot/${newSlot.id}`, ifMatch: `W/"${newSlot.meta?.versionId}"` },
-        },
-        {
-          resource: moved,
-          request: { method: "PUT", url: `Appointment/${appointment.id}`, ifMatch: `W/"${appointment.meta?.versionId}"` },
-        },
-        {
-          resource: freed(oldSlot),
-          request: { method: "PUT", url: `Slot/${oldSlot.id}`, ifMatch: `W/"${oldSlot.meta?.versionId}"` },
-        },
-      ],
-    };
-    const result = await fhir.transaction(transaction);
-    if (result.status === "committed") {
-      return { outcome: "succeeded", appointment: appointmentDetails(moved, newSlot, providers) };
-    }
-    if (result.status === "conflict") return "conflict";
-    return { outcome: result.status };
+    return commitGuarded(
+      fhir,
+      [guardedPut(taken(newSlot, request.idempotencyKey)), guardedPut(moved), guardedPut(freed(oldSlot))],
+      () => ({ outcome: "succeeded" as const, appointment: appointmentDetails(moved, newSlot, providers) }),
+    );
   });
 }
