@@ -63,12 +63,23 @@ def test_scheduling_details_and_ids_are_left_readable(text):
     assert PhiMask().mask(text) == text
 
 
-def test_a_keyed_name_is_masked_and_then_masked_wherever_it_appears():
+def test_a_keyed_name_is_masked_wherever_it_appears_in_the_same_text():
     mask = PhiMask()
 
-    assert mask.mask("arguments {'given_name': 'Rosalind', 'family_name': 'Okonkwo'}") == (
-        f"arguments {{'given_name': '{NAME}', 'family_name': '{NAME}'}}"
+    assert mask.mask("arguments {'given_name': 'Rosalind', 'family_name': 'Okonkwo'} for Rosalind") == (
+        f"arguments {{'given_name': '{NAME}', 'family_name': '{NAME}'}} for {NAME}"
     )
+
+
+def test_masking_teaches_the_mask_nothing_and_learning_a_keyed_name_masks_it_from_then_on():
+    mask = PhiMask()
+    line = "arguments {'given_name': 'Rosalind', 'family_name': 'Okonkwo'}"
+    mask.mask(line)
+
+    assert mask.mask("Thanks, Rosalind.") == "Thanks, Rosalind."
+
+    mask.learn_keyed_values(line)
+
     assert mask.mask('Thanks, ROSALIND. "okonkwo" noted.') == f'Thanks, {NAME}. "{NAME}" noted.'
 
 
@@ -89,6 +100,12 @@ def test_fhir_shaped_data_is_masked_by_its_keys():
         "birthDate": DATE_OF_BIRTH,
         "telecom": [{"system": "phone", "value": PHONE}],
     }
+    assert mask.mask("the official phone line") == "the official phone line"
+    assert mask.mask("Rosalind Okonkwo") == "Rosalind Okonkwo"
+
+    mask.learn_keyed_data(patient)
+
+    assert mask.mask("Rosalind Okonkwo") == f"{NAME} {NAME}"
     assert mask.mask("the official phone line") == "the official phone line"
 
 

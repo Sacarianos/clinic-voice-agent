@@ -6,8 +6,10 @@ Logs and trace exports pass everything they write through `PHI.mask`. It masks i
   telling which words are a name, so every utterance is a phrase to mask wherever it shows up later:
   in the LLM context, in an STT span, or in a tool call.
 - Values under keys that hold a name, date of birth or phone number (`given_name`, `birthDate`,
-  `from_number` and so on) are masked in key-value text, JSON and FHIR-shaped data alike. Each value is
-  also learned, so the same name is masked when the agent or the Caller says it later in free text.
+  `from_number` and so on) are masked in key-value text, JSON and FHIR-shaped data alike, and wherever
+  else they appear in the same text. Masking teaches the mask nothing. Logs, trace exports and tool
+  calls teach it each such value with `learn_keyed_values` or `learn_keyed_data`, so the same name is
+  masked when the agent or the Caller says it later in free text.
 - Dates with a year before this one are masked as dates of birth. Every Patient is an adult, and
   appointments are never in a past year, so scheduling dates stay readable in traces.
 - Phone numbers are masked by their shape: E.164 (URL-encoded too), US formats, and seven or more
@@ -124,9 +126,21 @@ class PhiMask:
             if _remember(self._values, value, placeholder, self._max_learned):
                 self._values_pattern = None
 
-    def mask(self, text: str) -> str:
-        # Keyed values first: they teach the phrases masked below, for the rest of this same text too.
-        text = _KEYED_VALUE.sub(self._mask_keyed_value, text)
+    def learn_keyed_values(self, text: str) -> None:
+        """Learns every name, date of birth or phone number under its key in key-value text or JSON."""
+        for value, placeholder in _keyed_values_in(text).items():
+            self.learn(value, placeholder)
+
+    def learn_keyed_data(self, data: Any) -> None:
+        """Learns every name, date of birth or phone number under its key in JSON-like data."""
+        for value, placeholder in _keyed_values_of(data).items():
+            self.learn(value, placeholder)
+
+    def mask(self, text: str, *, also: dict[str, str] | None = None) -> str:
+        """Masks the text. also: more phrases to mask, each with its placeholder, for this text only."""
+        # Keyed values first: masked under their keys, then wherever else they appear in this same text.
+        here = {**(also or {}), **_keyed_values_in(text)}
+        text = _KEYED_VALUE.sub(_mask_keyed_value, text)
         speech, values = self._patterns()
         if speech:
             text = speech.sub(UNVERIFIED_CALLER, text)
@@ -137,41 +151,27 @@ class PhiMask:
             text = pattern.sub(PHONE, text)
         if values:
             text = values.sub(lambda match: self._values.get(match.group(0).casefold(), NAME), text)
+        if here:
+            local: OrderedDict[str, str] = OrderedDict()
+            for value, placeholder in here.items():
+                _remember(local, value, placeholder, len(here) * 2)
+            text = _phrases_pattern(local).sub(lambda match: local.get(match.group(0).casefold(), NAME), text)
         return text
 
     def mask_data(self, data: Any) -> Any:
         """Masks JSON-like data: dicts, lists and strings, such as tool arguments or a FHIR resource."""
-        self._learn_keyed_values(data)
-        return self._mask_data(data)
+        return self._mask_data(data, None, _keyed_values_of(data))
 
-    def _mask_data(self, data: Any, placeholder: str | None = None) -> Any:
+    def _mask_data(self, data: Any, placeholder: str | None, also: dict[str, str]) -> Any:
         if isinstance(data, dict):
-            return {key: self._mask_data(value, _placeholder_for(key, placeholder)) for key, value in data.items()}
+            return {
+                key: self._mask_data(value, _placeholder_for(key, placeholder), also) for key, value in data.items()
+            }
         if isinstance(data, list):
-            return [self._mask_data(item, placeholder) for item in data]
+            return [self._mask_data(item, placeholder, also) for item in data]
         if isinstance(data, str):
-            return self.mask(data) if placeholder in (None, _IN_TELECOM) else placeholder
+            return self.mask(data, also=also) if placeholder in (None, _IN_TELECOM) else placeholder
         return data
-
-    def _learn_keyed_values(self, data: Any, placeholder: str | None = None) -> None:
-        if isinstance(data, dict):
-            for key, value in data.items():
-                self._learn_keyed_values(value, _placeholder_for(key, placeholder))
-        elif isinstance(data, list):
-            for item in data:
-                self._learn_keyed_values(item, placeholder)
-        elif isinstance(data, str) and placeholder not in (None, _IN_TELECOM):
-            self.learn(data, placeholder)
-
-    def _mask_keyed_value(self, match: re.Match) -> str:
-        placeholder = PHI_KEYS[match.group("name")]
-
-        def mask_quoted(quoted: re.Match) -> str:
-            text = quoted.group(0)
-            self.learn(text[1:-1], placeholder)
-            return f"{text[0]}{placeholder}{text[-1]}"
-
-        return match.group("key") + _QUOTED_STRING.sub(mask_quoted, match.group("value"))
 
     def _patterns(self) -> tuple[re.Pattern | None, re.Pattern | None]:
         with self._lock:
@@ -209,7 +209,7 @@ class PhiRedactionProcessor(FrameProcessor):
                     for text in _texts(message.get("content")):
                         PHI.learn_unverified_speech(text)
         elif isinstance(frame, FunctionCallInProgressFrame):
-            PHI.mask_data(frame.arguments)
+            PHI.learn_keyed_data(frame.arguments)
         elif isinstance(frame, FunctionCallResultFrame) and frame.function_name == "verify_patient":
             result = frame.result if isinstance(frame.result, dict) else {}
             self._verified = self._verified or result.get("status") == "verified"
@@ -223,6 +223,37 @@ def _texts(content: Any) -> list[str]:
     if isinstance(content, list):
         return [part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)]
     return []
+
+
+def _keyed_values_in(text: str) -> dict[str, str]:
+    """Each name, date of birth or phone number under its key in key-value text or JSON, with its placeholder."""
+    found = {}
+    for match in _KEYED_VALUE.finditer(text):
+        for quoted in _QUOTED_STRING.finditer(match.group("value")):
+            found[quoted.group(0)[1:-1]] = PHI_KEYS[match.group("name")]
+    return found
+
+
+def _keyed_values_of(data: Any, placeholder: str | None = None) -> dict[str, str]:
+    """Each name, date of birth or phone number under its key in JSON-like data, with its placeholder."""
+    if isinstance(data, dict):
+        return {
+            value: masked_as
+            for key, item in data.items()
+            for value, masked_as in _keyed_values_of(item, _placeholder_for(key, placeholder)).items()
+        }
+    if isinstance(data, list):
+        return {value: masked_as for item in data for value, masked_as in _keyed_values_of(item, placeholder).items()}
+    if isinstance(data, str) and placeholder not in (None, _IN_TELECOM):
+        return {data: placeholder}
+    return {}
+
+
+def _mask_keyed_value(match: re.Match) -> str:
+    placeholder = PHI_KEYS[match.group("name")]
+    return match.group("key") + _QUOTED_STRING.sub(
+        lambda quoted: f"{quoted.group(0)[0]}{placeholder}{quoted.group(0)[-1]}", match.group("value")
+    )
 
 
 def _placeholder_for(key: Any, inherited: str | None) -> str | None:

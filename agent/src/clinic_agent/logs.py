@@ -17,7 +17,10 @@ def configure_logging(level: str, sink: TextIO = sys.stderr) -> None:
     """
 
     def write_masked(message) -> None:
-        sink.write(PHI.mask(str(message)))
+        line = str(message)
+        # A name a tool was called with is masked in every later line too.
+        PHI.learn_keyed_values(line)
+        sink.write(PHI.mask(line))
 
     logger.remove()
     logger.add(write_masked, level=level, diagnose=False, backtrace=False)
