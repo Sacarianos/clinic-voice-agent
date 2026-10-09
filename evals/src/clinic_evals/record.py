@@ -76,6 +76,7 @@ class RunRecord:
     error: str | None = None
     noise: list["AppliedConfusion"] = field(default_factory=list)  # what the noise injector garbled on the Caller's lines
     turn_secs: list[float] = field(default_factory=list)  # per Caller line: from saying it to the agent finishing its turn
+    llm_ttfb_secs: list[float] = field(default_factory=list)  # per run of the agent's LLM: its time to first token
     usage: TokenUsage = TokenUsage()  # the agent's LLM, not the simulated Caller's
 
     def slot_label(self, slot_id: str) -> str:

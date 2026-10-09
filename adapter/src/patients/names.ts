@@ -1,6 +1,7 @@
 import { doubleMetaphone } from "double-metaphone";
 
-// Lowercase ASCII letters only. Strips accents, apostrophes, hyphens and the spaces of a spelled-out name ("S M Y T H").
+// Lowercase ASCII letters only. Strips accents, apostrophes, hyphens and the spaces of a spelled-out name,
+// such as "S M Y T H".
 export const normalizeName = (name: string) =>
   name
     .normalize("NFKD")
@@ -17,9 +18,9 @@ function soundsAlike(stated: string, recorded: string): boolean {
   return statedCodes.some((code) => code !== "" && recordedCodes.includes(code));
 }
 
-// Speech recognition drops or swaps a sound that double-metaphone keeps (Brennan heard as Brendan, Lindqvist as
-// Lindquist). Allow one wrong letter per five, never in the first letter, so short names and names that start
-// differently (Kim and Kin, Larson and Carson) still have to sound the same.
+// Speech recognition drops or swaps a sound that double-metaphone keeps: Brennan heard as Brendan, Lindqvist as
+// Lindquist. Allow one wrong letter per five, never in the first letter, so short names and names that start
+// differently, such as Kim and Kin or Larson and Carson, still have to sound the same.
 function nearlySpelledAlike(stated: string, recorded: string): boolean {
   const a = normalizeName(stated);
   const b = normalizeName(recorded);

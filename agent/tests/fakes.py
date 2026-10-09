@@ -1,7 +1,7 @@
 """Stand-ins for Deepgram and the LLM so a call runs without network or API keys."""
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 
 from pipecat.frames.frames import (
@@ -96,10 +96,11 @@ class RunLLMOnceGreeted(FrameProcessor):
 class RecordingTTS(TTSService):
     """Records the text it is asked to speak and answers with silence, a tenth of a second per sentence by default.
 
+    seconds_per_sentence is a length for every sentence, or a function giving each sentence's length.
     Like Deepgram's TTS, it traces each sentence as a `tts` span holding the text.
     """
 
-    def __init__(self, seconds_per_sentence: float = 0.1):
+    def __init__(self, seconds_per_sentence: float | Callable[[str], float] = 0.1):
         super().__init__(
             push_start_frame=True,
             push_stop_frames=True,
@@ -111,5 +112,6 @@ class RecordingTTS(TTSService):
     @traced_tts
     async def run_tts(self, text: str, context_id: str) -> AsyncGenerator[Frame | None, None]:
         self.spoken.append(text)
-        silence = b"\x00\x00" * int(self.sample_rate * self._seconds_per_sentence)
+        seconds = self._seconds_per_sentence
+        silence = b"\x00\x00" * int(self.sample_rate * (seconds(text) if callable(seconds) else seconds))
         yield TTSAudioRawFrame(audio=silence, sample_rate=self.sample_rate, num_channels=1, context_id=context_id)

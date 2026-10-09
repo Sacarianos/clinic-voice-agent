@@ -1,7 +1,7 @@
 import type { Slot } from "fhir/r4";
 import { addDays, bookingWindow, clinicHour, clinicIso, startOfClinicDay } from "../clinic.ts";
 import type { FhirClient } from "../fhir/client.ts";
-import { loadProviders, type Provider } from "./providers.ts";
+import { loadProviders, scheduleIdOf, type Provider } from "./providers.ts";
 
 export type PartOfDay = "morning" | "afternoon";
 
@@ -49,7 +49,7 @@ export async function findSlots(fhir: FhirClient, request: FindSlotsRequest, now
     if (schedules) params.push(["schedule", schedules.map((id) => `Schedule/${id}`).join(",")]);
 
     for await (const slot of fhir.searchEach<Slot>("Slot", params)) {
-      const provider = providers.bySchedule.get(slot.schedule.reference?.slice("Schedule/".length) ?? "");
+      const provider = providers.bySchedule.get(scheduleIdOf(slot));
       if (!provider || !isInPartOfDay(new Date(slot.start), request.partOfDay)) continue;
       slots.push(offeredSlot(slot, provider));
       if (slots.length === request.limit) break;
@@ -63,7 +63,7 @@ export type SlotState = OfferedSlot & { status: "free" | "busy" };
 // One Slot as it stands now, for checking what a write did. Undefined when it isn't a Provider's Slot.
 export async function readSlot(fhir: FhirClient, slotId: string): Promise<SlotState | undefined> {
   const slot = await fhir.read<Slot>("Slot", slotId);
-  const provider = slot && (await loadProviders(fhir)).bySchedule.get(slot.schedule.reference?.slice("Schedule/".length) ?? "");
+  const provider = slot && (await loadProviders(fhir)).bySchedule.get(scheduleIdOf(slot));
   if (!slot || !provider) return undefined;
   return { ...offeredSlot(slot, provider), status: slot.status === "free" ? "free" : "busy" };
 }

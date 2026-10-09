@@ -195,7 +195,7 @@ async def test_a_grade_reason_never_carries_the_patients_name_date_of_birth_or_p
     [seeded] = seen
     born = date.fromisoformat(seeded.birth_date)
     private = ["Marguerite", "Villanueva", seeded.caller_phone, seeded.birth_date, f"{born:%B} {born.day}, {born.year}"]
-    [transfer] = [score for score in langfuse.scores if score["name"] == "say_do_match"]
+    [transfer] = [score for score in langfuse.scores if score["name"] == "no_transfer_promise"]
     assert transfer["value"] == 0
     assert "promised a transfer" in transfer["comment"]
     pushed = json.dumps(langfuse.scores) + json.dumps(langfuse.spans)
@@ -223,6 +223,6 @@ async def test_a_surname_the_noise_injector_garbled_is_masked_in_reasons_too(ehr
         results_dir=tmp_path,
     )
 
-    [transfer] = [score for score in langfuse.scores if score["name"] == "say_do_match"]
+    [transfer] = [score for score in langfuse.scores if score["name"] == "no_transfer_promise"]
     assert "Vianuevo" not in transfer["comment"]
     assert "Villanueva" not in transfer["comment"]

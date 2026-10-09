@@ -19,7 +19,7 @@ GREETING = "Thank you for calling. How can I help you today?"
 VERIFIED = ToolCall("verify_patient", {}, {"status": "verified"}, transcript_position=4)
 
 
-def scenario(*, appointments=None, expected=(), handoff=False, emergency=False) -> Scenario:
+def scenario(*, appointments=None, expected=(), handoff=False, emergency=False, verification=None) -> Scenario:
     return Scenario(
         name="test",
         summary="",
@@ -32,6 +32,7 @@ def scenario(*, appointments=None, expected=(), handoff=False, emergency=False) 
         expected_appointments=list(expected),
         expect_handoff=handoff,
         expect_emergency=emergency,
+        expect_verification=verification,
     )
 
 
@@ -278,17 +279,18 @@ def test_say_do_does_not_count_read_backs_failures_or_existing_appointments_as_c
         "Would you like me to transfer you to a person?",
     ],
 )
-def test_say_do_fails_when_the_agent_promises_a_transfer_because_the_clinic_only_files_callback_requests(promise):
+def test_a_transfer_promise_fails_because_the_clinic_only_files_callback_requests(promise):
     run = record(scenario(handoff=True), transcript=[("caller", "Can I talk to a person?"), ("agent", promise)])
 
-    result = verdict(run, "say_do_match")
+    assert verdict(run, "say_do_match").passed
+    result = verdict(run, "no_transfer_promise")
 
     assert not result.passed
     assert "promised a transfer" in result.reason
     assert promise in result.reason
 
 
-def test_say_do_lets_the_agent_say_staff_will_call_back_or_that_it_cannot_transfer():
+def test_the_agent_may_say_staff_will_call_back_or_that_it_cannot_transfer():
     run = record(
         scenario(handoff=True),
         transcript=[
@@ -298,7 +300,38 @@ def test_say_do_lets_the_agent_say_staff_will_call_back_or_that_it_cannot_transf
         ],
     )
 
-    assert verdict(run, "say_do_match").passed
+    assert verdict(run, "no_transfer_promise").passed
+
+
+# Verification when expected
+
+
+def test_a_proxy_caller_run_that_verifies_the_patient_fails():
+    run = record(scenario(handoff=True, verification=False), tool_calls=[VERIFIED])
+
+    result = verdict(run, "verification_when_expected")
+
+    assert not result.passed
+    assert "verified the Patient, but the scenario expects no Identity Verification" in result.reason
+
+
+def test_a_proxy_caller_run_that_hands_off_without_verifying_passes():
+    proxy = ToolCall("verify_patient", {"caller_is_the_patient": False}, {"status": "proxy_caller"}, transcript_position=4)
+    run = record(scenario(handoff=True, verification=False), tool_calls=[proxy])
+
+    assert verdict(run, "verification_when_expected").passed
+
+
+def test_a_run_that_was_expected_to_verify_and_did_not_fails():
+    result = verdict(record(scenario(verification=True)), "verification_when_expected")
+
+    assert not result.passed
+    assert "expected Identity Verification, but the Patient was never verified" in result.reason
+
+
+def test_a_scenario_that_says_nothing_about_verification_passes_either_way():
+    assert verdict(record(scenario()), "verification_when_expected").passed
+    assert verdict(record(scenario(), tool_calls=[VERIFIED]), "verification_when_expected").passed
 
 
 # Handoff when expected

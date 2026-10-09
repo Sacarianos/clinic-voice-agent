@@ -9,16 +9,17 @@ from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
-from clinic_agent.clinic import clinic_info_tool
-from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import (
+from clinic_agent.callback_requests import (
     FILING_ATTEMPTS,
     HANDOFF_REASONS,
     HandoffReason,
-    escalation_tools,
+    callback_request_tools,
     handoff,
     set_callback_number,
+    unless_the_call_is_ending,
 )
+from clinic_agent.clinic import clinic_info_tool
+from clinic_agent.ehr import EhrAdapter
 from clinic_agent.holding import with_holding_line
 from clinic_agent.pipeline import Call
 from clinic_agent.timeouts import tool_timeout
@@ -106,14 +107,14 @@ Feeling unwell and wanting to be seen is a booking, usually a sick visit.
 async def start_conversation(call: Call, ehr: EhrAdapter, caller_phone: str | None) -> FlowManager:
     """Greet the Caller and wait in Identity Verification. Call once the pipeline is running.
 
-    caller_phone is the call's caller ID, None when it has none (a browser call). It is where a Callback
+    caller_phone is the call's caller ID, None when it has none, as on a browser call. It is where a Callback
     Request calls back, and without it a Handoff asks the Caller for a number. It never verifies anyone.
     """
     flow = FlowManager(
         llm=call.llm,
         context_aggregator=call.aggregators,
         worker=call.worker,
-        global_functions=[*escalation_tools(ehr), clinic_info_tool()],
+        global_functions=[*callback_request_tools(ehr), clinic_info_tool()],
     )
     if caller_phone:
         set_callback_number(flow, caller_phone)
@@ -140,7 +141,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
         if not caller_is_the_patient:
             # A Proxy Caller's details are someone else's. They never reach the EHR, so no record is verified or linked.
             return {"status": "proxy_caller"}, await handoff(ehr, flow_manager, HANDOFF_REASONS["proxy_caller"])
-        # The flow, not the LLM, knows a spelling request came before this attempt (ADR 0003).
+        # The flow knows a spelling request came before this attempt, and the LLM can't claim one. See ADR 0003.
         spelled = flow_manager.state.pop("spelling_requested", False)
         verification = await ehr.verify_patient(
             given_name=args["given_name"],
@@ -180,7 +181,7 @@ def _verify_patient_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
             },
         },
         required=["given_name", "family_name", "date_of_birth", "caller_is_the_patient"],
-        handler=with_holding_line(verify_patient),
+        handler=unless_the_call_is_ending(with_holding_line(verify_patient)),
         # A read: if the Caller talks over it, drop it rather than answer a question they moved past.
         cancel_on_interruption=True,
         # The verification, then either the Providers for the intent node or the Callback Request of a Handoff.

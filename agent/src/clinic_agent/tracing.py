@@ -83,9 +83,14 @@ def _masked_value(value: Any) -> Any:
 
 def _masked_text(text: str) -> str:
     """LLM input, output and tool definitions are JSON. Masking them as data keeps them valid JSON."""
+    # Each name a span holds under its key is learned, so it is masked in every later span and log line too.
     if text[:1] in ("{", "["):
         try:
-            return json.dumps(PHI.mask_data(json.loads(text)))
+            data = json.loads(text)
         except ValueError:
             pass
+        else:
+            PHI.learn_keyed_data(data)
+            return json.dumps(PHI.mask_data(data))
+    PHI.learn_keyed_values(text)
     return PHI.mask(text)

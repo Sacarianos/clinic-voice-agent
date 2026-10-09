@@ -1,4 +1,5 @@
-import { EhrUnavailableError } from "./fhir/client.ts";
+import type { Appointment, BundleEntry, Slot } from "fhir/r4";
+import { EhrUnavailableError, type FhirClient } from "./fhir/client.ts";
 
 // Every write answers with one of four outcomes, always with HTTP 200, and the agent acts on each
 // differently:
@@ -28,4 +29,26 @@ export async function versionGuardedWrite<Outcome extends WriteOutcome<object, s
     if (error instanceof EhrUnavailableError) return { outcome: "failed" };
     throw error;
   }
+}
+
+// A transaction entry that writes the resource back, guarded by the version it was read at, so a
+// write that changed it since then makes the whole transaction conflict.
+export function guardedPut<Resource extends Slot | Appointment>(resource: Resource): BundleEntry<Resource> {
+  return {
+    resource,
+    request: { method: "PUT", url: `${resource.resourceType}/${resource.id}`, ifMatch: `W/"${resource.meta?.versionId}"` },
+  };
+}
+
+// Commits the entries in one transaction. Committed answers succeeded(), a conflict sends
+// versionGuardedWrite round to read and decide again, and anything else is what came of it.
+export async function commitGuarded<Success extends { outcome: "succeeded" }>(
+  fhir: FhirClient,
+  entries: BundleEntry<Slot | Appointment>[],
+  succeeded: () => Success,
+): Promise<Success | "conflict" | { outcome: "failed" | "unknown" }> {
+  const result = await fhir.transaction({ resourceType: "Bundle", type: "transaction", entry: entries });
+  if (result.status === "committed") return succeeded();
+  if (result.status === "conflict") return "conflict";
+  return { outcome: result.status };
 }

@@ -66,6 +66,8 @@ class Scenario:
     expected_appointments: list[ExpectedAppointment]  # all the Patient's booked Appointments, nothing more
     expect_handoff: bool
     expect_emergency: bool = False  # the call ends in an Emergency Redirect, with an emergency Callback Request
+    # True: the agent must verify the Patient. False: it must not, as for a Proxy Caller. None: either is fine.
+    expect_verification: bool | None = None
 
 
 def load_scenarios(directory: Path) -> list[Scenario]:
@@ -96,6 +98,8 @@ def _parse(name: str, data: dict) -> Scenario:
         raise ScenarioError(f"expect.handoff must be true or false, not {expect.get('handoff')!r}")
     if not isinstance(expect.get("emergency", False), bool):
         raise ScenarioError(f"expect.emergency must be true or false, not {expect['emergency']!r}")
+    if expect.get("verification") not in (True, False, None):
+        raise ScenarioError(f"expect.verification must be true or false, not {expect['verification']!r}")
     if slots and not data.get("provider"):
         raise ScenarioError("Slots need a provider to belong to")
     names = set(slots) | {f"{label}_day" for label in slots} | {WRONG_BIRTH_DATE}
@@ -115,6 +119,7 @@ def _parse(name: str, data: dict) -> Scenario:
         expected_appointments=expected,
         expect_handoff=expect["handoff"],
         expect_emergency=expect.get("emergency", False),
+        expect_verification=expect.get("verification"),
     )
 
 

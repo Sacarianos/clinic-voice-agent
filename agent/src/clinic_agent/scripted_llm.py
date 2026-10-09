@@ -3,6 +3,7 @@
 Conversation tests and the eval harness's own tests use it to drive the real flow with no API key.
 """
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 
@@ -22,6 +23,8 @@ from pipecat.services.llm_service import LLMService
 from pipecat.services.settings import LLMSettings
 from pipecat.utils.tracing.service_decorators import traced_llm
 
+from clinic_agent.llm import RUN_TOOLS_IN_PARALLEL
+
 
 @dataclass(frozen=True)
 class CallTool:
@@ -32,14 +35,23 @@ class CallTool:
 
 
 class ScriptedLLM(LLMService):
-    """Answers each LLM run with the next scripted step: a line to speak or a CallTool.
+    """Answers each LLM run with the next scripted step: a line to speak, a CallTool, or a list of CallTools
+    for one reply that calls several tools at once.
 
     Like a real LLM service, it logs the context it was given at DEBUG level and traces each run as an
     `llm` span holding the context and its reply, so logs and traces carry what they would on a real call.
+    It also reports each run's time to first token, which is first_token_after_secs plus a moment.
     """
 
-    def __init__(self, steps: list[str | CallTool], *, usage: LLMTokenUsage | None = None):
+    def __init__(
+        self,
+        steps: list[str | CallTool | list[CallTool]],
+        *,
+        usage: LLMTokenUsage | None = None,
+        first_token_after_secs: float = 0,
+    ):
         super().__init__(
+            run_in_parallel=RUN_TOOLS_IN_PARALLEL,
             settings=LLMSettings(
                 model="scripted",
                 system_instruction=None,
@@ -56,6 +68,7 @@ class ScriptedLLM(LLMService):
         )
         self.steps = list(steps)
         self._usage = usage  # what each run reports as its token usage, when set
+        self._first_token_after_secs = first_token_after_secs
 
     def can_generate_metrics(self) -> bool:
         return True
@@ -72,15 +85,21 @@ class ScriptedLLM(LLMService):
         logger.debug(f"{self}: Generating chat from context {self.get_llm_adapter().get_messages_for_logging(context)}")
         step = self.steps.pop(0) if self.steps else "(script exhausted)"
         await self.push_frame(LLMFullResponseStartFrame())
+        await self.start_ttfb_metrics()
+        await asyncio.sleep(self._first_token_after_secs)
+        await self.stop_ttfb_metrics()
         if isinstance(step, CallTool):
+            step = [step]
+        if isinstance(step, list):
             await self.run_function_calls(
                 [
                     FunctionCallFromLLM(
-                        function_name=step.name,
+                        function_name=call.name,
                         tool_call_id=f"call_{uuid.uuid4().hex[:8]}",
-                        arguments=step.arguments,
+                        arguments=call.arguments,
                         context=context,
                     )
+                    for call in step
                 ]
             )
         else:

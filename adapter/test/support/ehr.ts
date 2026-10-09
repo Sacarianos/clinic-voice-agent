@@ -101,6 +101,12 @@ export async function createProvider(name: { given: string; family: string }): P
   return { providerId, scheduleId };
 }
 
+// The Provider stops taking new Appointments, as when they leave the clinic. Their Schedule stays, inactive.
+export async function closeSchedule(provider: TestProvider): Promise<void> {
+  const schedule = await fhir<Schedule>("GET", `Schedule/${provider.scheduleId}`);
+  await fhir<Schedule>("PUT", `Schedule/${provider.scheduleId}`, { ...schedule, active: false });
+}
+
 // A 30-minute Slot for the Provider starting at `start`, an ISO 8601 time such as clinicTime() gives.
 export async function createSlot(provider: TestProvider, start: string, status: Slot["status"] = "free"): Promise<string> {
   return create<Slot>({

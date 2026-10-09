@@ -9,14 +9,14 @@ import { patientRoutes } from "./patients/routes.ts";
 import { appointmentRoutes, providerRoutes, slotRoutes } from "./scheduling/routes.ts";
 
 // Error bodies are always { error: <code> }. Domain results, including a failed verification and every
-// write outcome (see write-outcome.ts), are 200s.
+// write outcome that write-outcome.ts lists, are 200s.
 export function createApp(config: Config) {
   const fhir = createFhirClient({ baseUrl: config.fhirBaseUrl, signal: requestDeadline, fetch: fetchWithFaults });
 
   return new Hono()
     .use(answerWithin(config.requestDeadlineMs))
     .use(injectFaults(config.injectFault))
-    .get("/healthz", (c) => c.json({ ok: true }))
+    .get("/healthz", (c) => c.json({ ok: true, requestDeadlineMs: config.requestDeadlineMs }))
     .route("/patients", patientRoutes(fhir))
     .route("/callback-requests", callbackRequestRoutes(fhir))
     .route("/providers", providerRoutes(fhir))

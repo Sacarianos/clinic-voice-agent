@@ -9,9 +9,9 @@ from fakes import RecordingTTS, ScriptedCaller, ScriptedLLM, SilentSTT
 from scripts import confirm_number, give_number, handoff
 from starlette.testclient import TestClient
 
+from clinic_agent.callback_requests import ASK_FOR_CALLBACK_NUMBER
 from clinic_agent.conversation import GREETING
 from clinic_agent.ehr import EhrAdapter
-from clinic_agent.escalation import ASK_FOR_CALLBACK_NUMBER
 from clinic_agent.phi import PHI
 from clinic_agent.server import BROWSER_GONE_AFTER_SECS, create_app
 from clinic_agent.services import VoiceServices
@@ -103,6 +103,32 @@ async def test_a_browser_caller_who_asks_for_a_person_is_called_back_at_the_numb
     assert "asked to speak to a person" in filed.reason.lower()
     heard = " ".join(sentence.strip() for sentence in tts.spoken)
     assert heard.index(ASK_FOR_CALLBACK_NUMBER) < heard.index(f"I have {digits[:3]}-{digits[3:6]}-{digits[6:]}")
+
+
+async def test_a_browser_caller_who_hangs_up_during_the_goodbye_ends_the_call_at_once(ehr, ehr_adapter_url):
+    digits = f"555{random.randrange(10**7):07d}"
+    phone = f"+1{digits}"
+    caller = ScriptedCaller(["Can I talk to a real person?", f"It's {digits}.", "Yes, that's right."])
+    # A long goodbye: the Caller hangs up while it is still playing.
+    tts = RecordingTTS(seconds_per_sentence=lambda sentence: 20 if "Goodbye" in sentence else 0.1)
+    app = create_app(
+        lambda: VoiceServices(
+            stt=caller,
+            llm=ScriptedLLM([handoff("asked_for_person"), give_number(digits), confirm_number(True)]),
+            tts=tts,
+            ehr=EhrAdapter(ehr_adapter_url),
+        )
+    )
+    browser = Browser(app)
+
+    try:
+        await browser.connect()
+        await _until(lambda: ehr.callback_requests_from(phone), "a Callback Request", seconds=20)
+        await _until(lambda: any("Goodbye" in sentence for sentence in tts.spoken), "the goodbye")
+        await browser.hang_up(seconds=2)
+    finally:
+        await browser.hang_up()
+        ehr.delete_callback_requests_from(phone)
 
 
 async def test_a_line_typed_on_the_page_before_verification_is_masked_whole_like_speech():

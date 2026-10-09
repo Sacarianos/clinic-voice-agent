@@ -6,7 +6,7 @@ import pytest
 from fakes import CallTool
 from scripts import handoff, spoken, verify
 
-from clinic_agent.escalation import COULD_NOT_FILE_CALLBACK_REQUEST
+from clinic_agent.callback_requests import COULD_NOT_FILE_CALLBACK_REQUEST
 
 
 @pytest.mark.parametrize(
@@ -148,5 +148,36 @@ async def test_a_patient_who_turns_out_to_be_calling_for_someone_else_is_handed_
         assert "on behalf of someone else" in filed.reason.lower()
         assert filed.patient_id == patient_id
         assert not call.tool_results("book_appointment")
+        assert call.ended
+        assert call.state == "handoff"
+
+
+# A model can call several tools in one reply. A Handoff in that reply ends the call, whatever else it asked for.
+@pytest.mark.scripted_only
+async def test_a_handoff_in_the_same_reply_as_verification_ends_the_call_with_the_patient_linked(ehr, start_call):
+    born = ehr.unused_birth_date()
+    patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+
+    async with start_call([[verify("Rosalind", "Okonkwo", born), handoff("asked_for_person")]]) as call:
+        await call.say(f"Rosalind Okonkwo, {spoken(born)}. Can I talk to a real person?")
+
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert filed.patient_id == patient_id
+        assert call.ended
+        assert call.state == "handoff"
+
+
+@pytest.mark.scripted_only
+async def test_verification_after_a_handoff_in_the_same_reply_never_reopens_the_call(ehr, start_call):
+    born = ehr.unused_birth_date()
+    ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
+
+    async with start_call([[handoff("asked_for_person"), verify("Rosalind", "Okonkwo", born)]]) as call:
+        await call.say(f"Can I talk to a real person? I'm Rosalind Okonkwo, {spoken(born)}.")
+
+        [filed] = ehr.callback_requests_from(call.caller_phone)
+        assert filed.patient_id is None
+        assert {"status": "verified"} not in call.tool_results("verify_patient")
+        assert not [tools for tools in call.offered_tools if "find_slots" in tools]
         assert call.ended
         assert call.state == "handoff"

@@ -114,6 +114,7 @@ def batch_document(results: list[RunResult], config: str, noise_rate: float) -> 
             "error": r.record.error,
             "grades": [{"grader": g.grader, "passed": g.passed, "reason": g.reason} for g in r.grades],
             "turn_secs": r.record.turn_secs,
+            "llm_ttfb_secs": r.record.llm_ttfb_secs,
             "usage": asdict(r.record.usage),
             "noise": [
                 {"turn": n.turn, "category": n.confusion.category, "said": n.confusion.said, "heard": n.confusion.heard, "source": n.confusion.source}
