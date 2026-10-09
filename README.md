@@ -16,7 +16,7 @@ docker compose -f infra/compose.yaml up -d --wait --build
 
 FHIR base URL: `http://localhost:8080/fhir`. Set `HAPI_PORT` first when 8080 is taken, and `-p <name>` to keep worktrees apart. It holds 60 synthetic adult Patients (Synthea v4.0.0, fixed seed), three Providers with a Schedule each, and free 30-minute Slots Monday to Friday, 8 to 5 (America/New_York), from the day you start it through 14 days out. `docker compose -f infra/compose.yaml restart seed` runs the seed again and adds any new days. It never changes existing resources. `docker compose -f infra/compose.yaml down -v` wipes the data. Delete `fhir/output` to regenerate the Patients.
 
-Seed tests run against that stack, through the FHIR API:
+Seed tests run against that stack, through the FHIR API. They look only at what the seed made, found by the clinic's identifiers, so other suites' records and leftovers from a crashed run don't affect them. They seed again first, which adds today's days to a stack started earlier. CI runs them against a stack it starts the same way:
 
 ```
 cd fhir
