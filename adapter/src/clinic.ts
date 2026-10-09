@@ -1,10 +1,17 @@
 // Facts about the fictional clinic, and its calendar. The clinic keeps time in one zone, so every
 // date a Caller says and every time the agent reads back is a wall-clock time there.
 
-export const CLINIC_TIMEZONE = "America/New_York";
+import { readFileSync } from "node:fs";
 
-// A Caller can book from now until the end of the day two weeks from today, clinic time.
-export const BOOKING_WINDOW_DAYS = 14;
+// clinic.json at the repo root holds the facts the seed and the agent share. In Docker it is mounted at /clinic.json.
+const clinic: { timezone: string; bookingWindowDays: number } = JSON.parse(
+  readFileSync(new URL("../../clinic.json", import.meta.url), "utf-8"),
+);
+
+export const CLINIC_TIMEZONE = clinic.timezone;
+
+// A Caller can book from now until the end of the day this many days from today, clinic time.
+export const BOOKING_WINDOW_DAYS = clinic.bookingWindowDays;
 
 const IDENTIFIER_BASE = "https://clinic.example/fhir/identifier";
 export const PROVIDER_SYSTEM = `${IDENTIFIER_BASE}/provider`;
