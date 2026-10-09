@@ -134,19 +134,28 @@ def start_call(ehr, llm_config):
 
     With --llm set, the script is ignored and the named model decides instead. Each call comes from its
     own phone number, so a test finds its Callback Requests by `call.caller_phone`. They are deleted
-    afterwards, before the Patients they point to.
+    afterwards, before the Patients they point to. With caller_id=False the call carries no number, as a
+    browser call doesn't, and the test's Caller says `caller_phone` when asked for one.
     """
     phones = []
 
     def start(
-        script: list, *, adapter_url: str = EHR_ADAPTER_URL, caller_phone: str | None = None, tracing: bool = False
+        script: list,
+        *,
+        adapter_url: str = EHR_ADAPTER_URL,
+        caller_phone: str | None = None,
+        caller_id: bool = True,
+        tracing: bool = False,
     ) -> TextCall:
         phone = caller_phone or f"+1555{random.randrange(10**7):07d}"
         phones.append(phone)
+        caller_id_phone = phone if caller_id else None
         if llm_config == "scripted":
-            return TextCall(ScriptedLLM(script), EhrAdapter(adapter_url), caller_phone=phone, tracing=tracing)
+            return TextCall(ScriptedLLM(script), EhrAdapter(adapter_url), caller_phone=caller_id_phone, tracing=tracing)
         llm = create_llm({**os.environ, "LLM_CONFIG": llm_config}, system_instruction=ROLE)
-        return TextCall(llm, EhrAdapter(adapter_url), caller_phone=phone, reply_timeout_secs=30, tracing=tracing)
+        return TextCall(
+            llm, EhrAdapter(adapter_url), caller_phone=caller_id_phone, reply_timeout_secs=30, tracing=tracing
+        )
 
     yield start
     for phone in phones:

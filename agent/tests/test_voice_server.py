@@ -4,13 +4,15 @@ import xml.etree.ElementTree as ET
 import pytest
 from ehr import clinic_time
 from fakes import CallTool, RecordingTTS, RunLLMOnceGreeted, ScriptedCaller, ScriptedLLM, SilentSTT, TalkOver
-from scripts import answer_read_back, handoff, spoken, verify
+from scripts import answer_read_back, handoff, spoken, unused_phone, verify
 from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from twilio_stream import CALL_SID, STREAM_SID, hang_up, next_media_message, start_media_stream
 
 from clinic_agent.config import ConfigError
 from clinic_agent.conversation import GREETING
 from clinic_agent.ehr import EhrAdapter
+from clinic_agent.phi import PHI
 from clinic_agent.server import TwilioAccount, app_from_env, create_app
 from clinic_agent.services import VoiceServices
 
@@ -98,12 +100,24 @@ def test_webhook_refuses_a_request_twilio_did_not_sign(form, headers):
 
 
 @pytest.mark.parametrize("missing", ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"])
-def test_server_refuses_to_start_without_twilio_credentials(missing):
+def test_server_refuses_to_start_with_only_half_of_the_twilio_credentials(missing):
     env = {**PHONE_KEYS, **TWILIO_KEYS}
     del env[missing]
 
     with pytest.raises(ConfigError, match=missing):
         app_from_env(env)
+
+
+def test_server_starts_without_twilio_credentials_and_takes_no_phone_calls():
+    client = TestClient(app_from_env(PHONE_KEYS))
+
+    webhook = client.post(
+        "/voice", data=INCOMING_CALL, headers={"host": NGROK_HOST, "x-twilio-signature": INCOMING_CALL_SIGNATURE}
+    )
+
+    assert webhook.status_code == 404
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect("/ws"):
+        pass
 
 
 def test_server_started_from_the_environment_checks_twilio_signatures():
@@ -132,10 +146,21 @@ def test_caller_hears_the_agent_greet_them_as_soon_as_the_call_connects():
     assert " ".join(sentence.strip() for sentence in tts.spoken) == GREETING
 
 
+def test_a_phone_call_without_caller_id_never_teaches_the_mask_a_placeholder_phone_number():
+    app = _app(lambda: VoiceServices(stt=SilentSTT(), llm=ScriptedLLM([]), tts=RecordingTTS(), ehr=UNUSED_EHR))
+
+    with TestClient(app) as client, client.websocket_connect("/ws") as twilio:
+        start_media_stream(twilio, from_number=None)
+        next_media_message(twilio)
+        hang_up(twilio, app)
+
+    assert PHI.mask("The write outcome was unknown.") == "The write outcome was unknown."
+
+
 def test_a_callback_request_filed_on_a_phone_call_has_the_number_twilio_passed_as_a_stream_parameter(
     ehr, ehr_adapter_url
 ):
-    phone = "+15555550188"
+    phone = unused_phone()
     app = _app(
         lambda: VoiceServices(
             stt=RunLLMOnceGreeted(),
@@ -163,7 +188,7 @@ def test_a_caller_verifies_and_books_over_the_phone_through_the_same_conversatio
     nine = clinic_time(1, "09:00")
     nine_slot = ehr.create_slot(faraday, nine)
     day = nine.date().isoformat()
-    phone = "+15555550177"
+    phone = unused_phone()
     caller = ScriptedCaller(
         [
             "Hi, I'd like to book an appointment.",
@@ -220,7 +245,7 @@ def test_a_caller_who_says_yes_over_the_read_back_is_asked_again_and_can_still_b
     nine = clinic_time(1, "09:00")
     nine_slot = ehr.create_slot(faraday, nine)
     day = nine.date().isoformat()
-    phone = "+15555550178"
+    phone = unused_phone()
     caller = ScriptedCaller(
         [
             "Hi, I'd like to book an appointment.",

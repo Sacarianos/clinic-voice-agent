@@ -104,8 +104,13 @@ class Ehr:
             self._fhir.delete(f"Task/{request.id}").raise_for_status()
 
     def create_provider(self, *, given: str, family: str) -> Provider:
-        """A Provider of the test's own, so the Slots it gets belong to the test alone."""
+        """A Provider of the test's own, so the Slots it gets belong to the test alone.
+
+        The surname gets a tag of its own too. The agent finds a Provider by name, and another test run
+        against the same EHR at the same time has a Dr. Imogen Faraday of its own.
+        """
         provider_id = f"test-{uuid.uuid4()}"
+        family = f"{family}-{uuid.uuid4().hex[:6]}"
         practitioner_id = self._create(
             {
                 "resourceType": "Practitioner",
