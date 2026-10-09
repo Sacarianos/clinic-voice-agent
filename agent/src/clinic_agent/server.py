@@ -235,7 +235,7 @@ async def _run_call(
         # first, it never is, and the transport would wait for that start forever before shutting down.
         for task in starting:
             task.cancel()
-        await call.worker.cancel()
+        await call.end_now()
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):

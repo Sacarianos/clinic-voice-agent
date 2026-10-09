@@ -5,10 +5,10 @@ behind it. A text transport puts typed lines in and captures replies instead. Th
 LLM is whatever the named config built. Everything between is shared.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pipecat.flows.actions import ActionFinishedFrame
-from pipecat.frames.frames import Frame
+from pipecat.frames.frames import CancelFrame, Frame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -28,6 +28,16 @@ class Call:
     llm: LLMService
     context: LLMContext
     aggregators: LLMContextAggregatorPair
+    _head: FrameProcessor = field(repr=False)
+
+    async def end_now(self) -> None:
+        """Ends the call at once, for a Caller who hung up, cutting off anything still being said.
+
+        The worker queues its cancel behind any frame it is still sending. After the goodbye that is the
+        end of the call, which waits for the goodbye to play out. So the cancel also goes straight in.
+        """
+        await self.worker.cancel()
+        await self._head.push_frame(CancelFrame())
 
 
 def build_call(
@@ -42,11 +52,12 @@ def build_call(
     """hear: processors that turn the Caller into transcripts. speak: processors that turn replies into output."""
     context = LLMContext()
     aggregators = LLMContextAggregatorPair(context, user_params=user_params)
+    head = _KeepFlowActionsAlive()
     pipeline = Pipeline(
-        [_KeepFlowActionsAlive(), *hear, PhiRedactionProcessor(), aggregators.user(), llm, *speak, aggregators.assistant()]
+        [head, *hear, PhiRedactionProcessor(), aggregators.user(), llm, *speak, aggregators.assistant()]
     )
     worker = PipelineWorker(pipeline, params=params, **worker_options)
-    return Call(worker=worker, llm=llm, context=context, aggregators=aggregators)
+    return Call(worker=worker, llm=llm, context=context, aggregators=aggregators, _head=head)
 
 
 class _KeepFlowActionsAlive(FrameProcessor):
