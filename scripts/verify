@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Runs every test suite against a fresh stack of this worktree's own, then removes the stack.
+# Prints one line per suite and one overall line, and exits non-zero when any suite failed.
+# Needs Docker, Node 24, pnpm and uv. It never calls a paid API: the agent and evals suites use the
+# scripted LLM, and no suite reads .env.
+set -uo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+
+# winget installs uv and pnpm outside the PATH an inherited shell has. Look where it puts them.
+need() {
+  command -v "$1" >/dev/null 2>&1 && return 0
+  local winget="" dir
+  if [ -n "${LOCALAPPDATA:-}" ]; then
+    winget=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")/Microsoft/WinGet
+  fi
+  for dir in "$winget/Links" "$winget"/Packages/*; do
+    if [ -x "$dir/$1" ] || [ -x "$dir/$1.exe" ]; then
+      export PATH="$dir:$PATH"
+      return 0
+    fi
+  done
+  echo "scripts/verify: $1 is not installed or not on PATH." >&2
+  exit 2
+}
+need docker
+need node
+need pnpm
+need uv
+
+logs=$(mktemp -d)
+failed=()
+started=$SECONDS
+
+teardown() {
+  local status=$?
+  echo "Removing the stack..."
+  scripts/stack down >"$logs/down.log" 2>&1 || { echo "scripts/verify: scripts/stack down failed:"; cat "$logs/down.log"; }
+  rm -r "$logs"
+  exit $status
+}
+trap teardown EXIT
+trap 'exit 130' INT TERM
+
+echo "Starting a stack for this worktree..."
+if ! scripts/stack up >"$logs/up.log" 2>&1; then
+  cat "$logs/up.log"
+  echo "verify: FAIL (the stack did not come up)"
+  exit 1
+fi
+eval "$(scripts/stack env)"
+echo "HAPI at $FHIR_BASE_URL, adapter at $EHR_ADAPTER_URL"
+
+# Runs a suite and saves its output. A failing suite prints its log, then every suite prints one line.
+suite() {
+  local name=$1 dir=$2 begin=$SECONDS
+  shift 2
+  (cd "$dir" && "$@") >"$logs/$name.log" 2>&1
+  local status=$? took=$((SECONDS - begin))
+  if [ $status -eq 0 ]; then
+    printf 'PASS  %-8s %4ss\n' "$name" "$took"
+  else
+    cat "$logs/$name.log"
+    printf 'FAIL  %-8s %4ss\n' "$name" "$took"
+    failed+=("$name")
+  fi
+}
+
+# The typecheck and the tests both run, so one failure doesn't hide the other.
+adapter() {
+  local status=0
+  pnpm install --frozen-lockfile || return
+  pnpm typecheck || status=1
+  pnpm test || status=1
+  return $status
+}
+
+suite adapter adapter adapter
+suite agent agent uv run --frozen pytest
+suite evals evals uv run --frozen pytest
+suite seed fhir uv run --frozen pytest
+
+total=$((SECONDS - started))
+if [ ${#failed[@]} -eq 0 ]; then
+  echo "verify: PASS (4 suites, ${total}s)"
+  exit 0
+fi
+echo "Stack logs:"
+scripts/stack logs 2>&1 || true
+echo "verify: FAIL (${failed[*]}) after ${total}s"
+exit 1

@@ -160,25 +160,27 @@ To call it from a real phone through Twilio, see [Over the phone](agent/README.m
 
 ## Run the tests
 
-None of these need API keys. A scripted fake stands in for the LLM. Start the records first, as in step 2.
+One command runs every suite. None of them need API keys: a scripted fake stands in for the LLM.
 
 ```bash
-cd adapter && pnpm install && pnpm test
+scripts/verify
+```
+
+It starts a fresh copy of the clinic's records just for this checkout, runs the adapter, agent, evals and seed suites against it, prints one PASS or FAIL line per suite, then removes everything it started. CI runs the same script. It needs Docker, uv, Node 24 and pnpm. The first run is slow because it generates the patients and installs dependencies. After that it takes about five minutes.
+
+Each checkout gets its own stack on its own ports, so two copies of the repo can run `scripts/verify` at the same time. `scripts/stack` runs that stack on its own:
+
+```bash
+scripts/stack up
 ```
 
 ```bash
-cd agent && uv run pytest
+eval "$(scripts/stack env)"
 ```
 
-```bash
-cd evals && uv run pytest
-```
+The second command points the suites at that stack, so you can run one suite by hand, for example `cd agent && uv run pytest`. `scripts/stack down` stops the stack and deletes its data.
 
-```bash
-cd fhir && uv run pytest
-```
-
-The adapter tests need Node 24 and pnpm. The [evals](evals/README.md) can also run whole conversations against a real LLM, with a second LLM playing the patient, and score them. Those runs cost money and never run in CI.
+The [evals](evals/README.md) can also run whole conversations against a real LLM, with a second LLM playing the patient, and score them. Those runs cost money and never run in CI.
 
 ## Paid calls
 

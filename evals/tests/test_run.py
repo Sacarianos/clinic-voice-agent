@@ -169,6 +169,7 @@ async def test_a_run_records_each_turns_latency_the_llms_time_to_first_token_the
     [turn] = run.turn_secs
     [first_token] = run.llm_ttfb_secs
     [handoff_call] = run.tool_calls
-    assert 0.2 <= first_token < turn
+    # The sleep and the metric read different clocks, and on Windows those can disagree by a timer tick or two.
+    assert 0.15 <= first_token < turn
     assert 0 < handoff_call.duration_secs <= turn
     assert run.usage == TokenUsage(input_tokens=1000, output_tokens=20, cache_read_tokens=300, cache_write_tokens=50)

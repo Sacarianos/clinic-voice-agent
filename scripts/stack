@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# The local EHR stack for this worktree: HAPI, the seed and the EHR adapter, under a Compose project
+# name made from the worktree's path, on host ports Docker picks. Two worktrees never share a stack.
+#
+#   scripts/stack up     start it and wait until the clinic is seeded and the adapter answers
+#   scripts/stack env    print the exports that point the test suites at it: eval "$(scripts/stack env)"
+#   scripts/stack logs   print the tail of every service's log
+#   scripts/stack down   stop it and delete its data, containers and images
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+
+# The same path always gives the same name, so up, env and down find the same stack.
+slug=$(basename "$root" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | cut -c1-24)
+project="clinic-${slug}-$(printf '%s' "$root" | cksum | cut -d' ' -f1)"
+
+# Port 0 asks Docker for a free host port when the container starts, so no other stack can take it first.
+# The fault and the start date are cleared so a variable left in the shell can't bend the run.
+compose() {
+  HAPI_PORT=0 ADAPTER_PORT=0 INJECT_FAULT= SEED_START_DATE= \
+    docker compose -p "$project" -f infra/compose.yaml "$@"
+}
+
+# Prints the host port of a service, or fails when the service isn't running.
+host_port() {
+  local mapping
+  mapping=$(compose port "$1" "$2" 2>/dev/null) && [ -n "$mapping" ] || return 1
+  printf '%s\n' "${mapping##*:}"
+}
+
+case "${1:-}" in
+  up)
+    if ! compose up -d --wait --build; then
+      compose logs --no-color --tail 40 >&2 || true
+      echo "scripts/stack: the stack $project did not come up. scripts/stack down removes it." >&2
+      exit 1
+    fi
+    echo "scripts/stack: $project is up" >&2
+    ;;
+  env)
+    hapi=$(host_port hapi 8080) && adapter=$(host_port adapter 3000) || {
+      echo "scripts/stack: no stack is running for this worktree. Run scripts/stack up first." >&2
+      exit 1
+    }
+    echo "export FHIR_BASE_URL=http://localhost:$hapi/fhir"
+    echo "export EHR_ADAPTER_URL=http://localhost:$adapter"
+    ;;
+  logs)
+    compose logs --no-color --tail 40
+    ;;
+  down)
+    compose down --volumes --remove-orphans --rmi local
+    ;;
+  *)
+    echo "usage: scripts/stack up|env|logs|down" >&2
+    exit 2
+    ;;
+esac
