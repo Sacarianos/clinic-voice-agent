@@ -51,7 +51,9 @@ def _estimated_dollars_per_test(llm_config: str) -> float | None:
 
 
 def _describe(dollars: float | None) -> str:
-    return "an unknown amount" if dollars is None else f"about ${dollars:.2f}"
+    if dollars is None:
+        return "an unknown amount"
+    return f"about ${dollars:.2f}" if dollars >= 0.1 else f"about ${dollars:.4f}"
 
 
 def pytest_configure(config):
