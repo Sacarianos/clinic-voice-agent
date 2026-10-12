@@ -24,7 +24,7 @@ evals/results/
 Thumbs.db
 .vscode/
 .idea/
-.claude/
+.claude/worktrees/
 
 # Audit log of write attempts (see docs/phi-policy.md)
 audit-log.jsonl

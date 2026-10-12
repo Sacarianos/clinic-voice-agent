@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
+from clinic_agent.cost import TokenUsage
 from clinic_agent.text_call import ToolCall
 from clinic_evals.scenario import Scenario
 
@@ -56,16 +57,6 @@ class EndState:
 
 
 @dataclass(frozen=True)
-class TokenUsage:
-    """What the agent's LLM used over one call. Input is only the part that did not come from the prompt cache."""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
-
-
-@dataclass(frozen=True)
 class RunRecord:
     scenario: Scenario
     seeded: Seeded
@@ -78,6 +69,7 @@ class RunRecord:
     turn_secs: list[float] = field(default_factory=list)  # per Caller line: from saying it to the agent finishing its turn
     llm_ttfb_secs: list[float] = field(default_factory=list)  # per run of the agent's LLM: its time to first token
     usage: TokenUsage = TokenUsage()  # the agent's LLM, not the simulated Caller's
+    caller_usage: TokenUsage = TokenUsage()  # the simulated Caller's LLM
 
     def slot_label(self, slot_id: str) -> str:
         """The scenario's name for a Slot, quoted, or the Slot's id when the scenario didn't make it."""
