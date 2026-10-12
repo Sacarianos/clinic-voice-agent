@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx2
 from anthropic import AsyncAnthropic
 
+from clinic_agent.cost import TokenUsage
 from clinic_evals.caller import Reply, SimulatedCaller, persona
 from clinic_evals.record import Seeded
 from clinic_evals.scenario import SCENARIOS_DIR, load_scenario
@@ -47,7 +48,7 @@ class MessagesStandIn:
                 "content": [{"type": "text", "text": text}],
                 "stop_reason": "end_turn",
                 "stop_sequence": None,
-                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "usage": {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 3, "cache_creation_input_tokens": 2},
             },
         )
 
@@ -90,3 +91,14 @@ async def test_the_caller_plays_the_scenario_patient_and_hangs_up_when_done():
     assert "Book your yearly checkup with Dr. Imogen Faraday on Friday, October 9, in the morning." in system
     assert [m["role"] for m in messages.requests[1]["messages"]] == ["user", "assistant", "user"]
     assert messages.requests[1]["model"] == "claude-haiku-4-5"
+
+
+async def test_the_caller_adds_up_the_tokens_it_used():
+    scenario = load_scenario(SCENARIOS_DIR / "plain_book.yaml")
+    caller = SimulatedCaller(scenario, seeded(), client=MessagesStandIn(["Hi.", "Thanks. HANG UP"]).client())
+    assert caller.usage == TokenUsage()
+
+    await caller.reply("How can I help?")
+    await caller.reply("You're booked.")
+
+    assert caller.usage == TokenUsage(input_tokens=20, output_tokens=10, cache_read_tokens=6, cache_write_tokens=4)

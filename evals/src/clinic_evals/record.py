@@ -69,6 +69,7 @@ class RunRecord:
     turn_secs: list[float] = field(default_factory=list)  # per Caller line: from saying it to the agent finishing its turn
     llm_ttfb_secs: list[float] = field(default_factory=list)  # per run of the agent's LLM: its time to first token
     usage: TokenUsage = TokenUsage()  # the agent's LLM, not the simulated Caller's
+    caller_usage: TokenUsage = TokenUsage()  # the simulated Caller's LLM
 
     def slot_label(self, slot_id: str) -> str:
         """The scenario's name for a Slot, quoted, or the Slot's id when the scenario didn't make it."""

@@ -8,6 +8,7 @@ from anthropic import AsyncAnthropic
 
 from clinic_agent.booking import spoken_time
 from clinic_agent.conversation import CLINIC_NAME
+from clinic_agent.cost import TokenUsage
 from clinic_evals.record import Seeded
 from clinic_evals.scenario import WRONG_BIRTH_DATE, Scenario
 
@@ -23,6 +24,8 @@ class Reply:
 
 
 class Caller(Protocol):
+    usage: TokenUsage  # what the Caller's own LLM has used so far, nothing for a script
+
     async def reply(self, agent_said: str) -> Reply: ...
 
 
@@ -31,6 +34,7 @@ class ScriptedCaller:
 
     def __init__(self, lines: list[str]):
         self._lines = list(lines)
+        self.usage = TokenUsage()
 
     async def reply(self, agent_said: str) -> Reply:
         return Reply(self._lines.pop(0)) if self._lines else Reply("", hangs_up=True)
@@ -44,12 +48,20 @@ class SimulatedCaller:
         self._client = client
         self._model = model
         self._messages: list[dict] = []
+        self.usage = TokenUsage()
 
     async def reply(self, agent_said: str) -> Reply:
         # The agent is the "user" here: the Caller answers it.
         self._messages.append({"role": "user", "content": agent_said or "(silence)"})
         response = await self._client.messages.create(
             model=self._model, max_tokens=300, system=self.persona, messages=self._messages
+        )
+        reported = response.usage
+        self.usage += TokenUsage(
+            input_tokens=reported.input_tokens,
+            output_tokens=reported.output_tokens,
+            cache_read_tokens=reported.cache_read_input_tokens or 0,
+            cache_write_tokens=reported.cache_creation_input_tokens or 0,
         )
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         self._messages.append({"role": "assistant", "content": text or HANG_UP})

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from clinic_agent.cost import TokenUsage
 from clinic_evals.caller import Caller, Reply
 
 CONFUSIONS_PATH = Path(__file__).resolve().parents[2] / "confusions.yaml"
@@ -112,6 +113,10 @@ class NoisyCaller:
         self._injector = injector
         self._turns = 0
         self.noise: list[AppliedConfusion] = []
+
+    @property
+    def usage(self) -> TokenUsage:
+        return self._caller.usage
 
     async def reply(self, agent_said: str) -> Reply:
         reply = await self._caller.reply(agent_said)

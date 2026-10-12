@@ -62,6 +62,7 @@ async def run_scenario(
         turn_secs,
         list(call.llm_ttfb_secs),
         token_usage(llm, call.llm_usage),
+        simulated.usage,
     )
 
 
