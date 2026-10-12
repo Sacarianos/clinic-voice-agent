@@ -2,10 +2,9 @@ import pytest
 from pipecat.adapters.schemas.direct_function import tool_options
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
+from pipecat.processors.aggregators.llm_context import NOT_GIVEN, LLMContext
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
-
-from pipecat.processors.aggregators.llm_context import NOT_GIVEN, LLMContext
 
 from clinic_agent.config import ConfigError
 from clinic_agent.llm import create_llm

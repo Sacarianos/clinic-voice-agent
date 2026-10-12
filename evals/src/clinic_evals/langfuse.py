@@ -19,7 +19,6 @@ import httpx
 from clinic_agent.tracing import DEFAULT_LANGFUSE_BASE_URL
 from clinic_evals.graders import Grade
 
-
 # The Hobby tier rate-limits the scores API, and a batch posts several scores per run.
 ATTEMPTS = 5
 
