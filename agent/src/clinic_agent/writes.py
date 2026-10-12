@@ -61,6 +61,7 @@ async def write_until_settled(
     including one that raises or is cancelled.
     """
     answered_unknown = False
+    outcome = WriteOutcome("failed")
     for attempt in range(1, ATTEMPTS + 1):
         sent: WriteOutcome | None = None
         reconciled: WriteOutcome | None = None
@@ -81,6 +82,8 @@ async def write_until_settled(
                 reason=(sent.reason if sent else None) or error,
                 reconciled=reconciled.outcome if reconciled else None,
             )
+        # send() either returned an outcome or raised out of this loop.
+        assert sent is not None
         outcome = reconciled or sent
         if outcome.outcome in ("succeeded", "rejected"):
             return outcome

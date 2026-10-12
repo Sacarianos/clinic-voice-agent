@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import httpx
 from loguru import logger
-from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
+from pipecat.flows import ActionConfig, FlowManager, FlowsFunctionSchema, NodeConfig
 from pipecat.frames.frames import TTSSpeakFrame
 
 from clinic_agent.audit import Write
@@ -251,11 +251,12 @@ def _record_callback_number_tool(
 
 
 def _closing_node(name: str, goodbye: str | None) -> NodeConfig:
+    end: ActionConfig = {"type": "end_conversation", "text": goodbye} if goodbye else {"type": "end_conversation"}
     return {
         "name": name,
         "task_messages": [],
         "functions": [],
-        "pre_actions": [{"type": "end_conversation", **({"text": goodbye} if goodbye else {})}],
+        "pre_actions": [end],
         "respond_immediately": False,
     }
 

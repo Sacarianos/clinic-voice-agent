@@ -156,6 +156,7 @@ class _Appointments:
                 cancelled = f"Your {_details(appointment)} is cancelled. {ANYTHING_ELSE}"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(cancelled)
             if written.outcome == "rejected":
+                assert written.reason is not None
                 result = {"outcome": "rejected", "reason": written.reason}
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
             reason = unsettled(written, verb="cancel", done="cancelled", details=_details(appointment))

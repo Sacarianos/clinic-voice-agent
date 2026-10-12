@@ -123,7 +123,7 @@ def _add_browser_routes(app: FastAPI, webrtc: SmallWebRTCRequestHandler, run_cal
         return {"sessionId": str(uuid.uuid4())}
 
     @app.post("/sessions/{session_id}/api/offer")
-    async def offer(session_id: uuid.UUID, request: SmallWebRTCRequest) -> dict:
+    async def offer(session_id: uuid.UUID, request: SmallWebRTCRequest) -> dict | None:
         async def call_in_background(connection: SmallWebRTCConnection) -> None:
             transport = SmallWebRTCTransport(
                 webrtc_connection=connection,
@@ -156,7 +156,9 @@ def _add_phone_routes(app: FastAPI, twilio: TwilioAccount, run_call, *, hang_up_
         # that public host in the Host header, so the URL rebuilt from it is the one Twilio signed.
         public_url = str(request.url.replace(scheme="https"))
         signature = request.headers.get("x-twilio-signature")
-        if not _signed_by_twilio(twilio.auth_token, public_url, form.multi_items(), signature):
+        if not _signed_by_twilio(
+            twilio.auth_token, public_url, [(name, str(value)) for name, value in form.multi_items()], signature
+        ):
             logger.warning(f"Refused a webhook without a valid Twilio signature for {public_url}")
             return Response(status_code=403)
         # Twilio only streams to wss://.
@@ -230,7 +232,9 @@ async def _run_call(
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
-        starting.append(asyncio.current_task())
+        task = asyncio.current_task()
+        assert task is not None
+        starting.append(task)
         await start_conversation(call, services.ehr, caller_phone)
 
     async def caller_left():
@@ -244,12 +248,12 @@ async def _run_call(
     async def on_client_disconnected(transport, client):
         await caller_left()
 
-    async def watch_for_a_silent_exit():
-        await gone
+    async def watch_for_a_silent_exit(silence: Coroutine[Any, Any, None]):
+        await silence
         logger.info("The Caller stopped answering without hanging up. Ending the call.")
         await caller_left()
 
-    watching = asyncio.create_task(watch_for_a_silent_exit()) if gone else None
+    watching = asyncio.create_task(watch_for_a_silent_exit(gone)) if gone else None
     runner = WorkerRunner(handle_sigint=False)  # uvicorn owns the signals
     await runner.add_workers(call.worker)
     try:

@@ -5,7 +5,7 @@ own tools, so nothing past Identity Verification can be reached before it succee
 tool on the LLM directly: a handler registered that way runs whatever the current node offers.
 """
 
-from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
+from pipecat.flows import FlowManager, FlowsDirectFunction, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
@@ -200,7 +200,10 @@ async def _intent_node(ehr: EhrAdapter) -> NodeConfig:
         }
 
     exits = Exits(back_to_intent=back_to_intent)
-    functions = [find_slots_tool(ehr, providers, exits), list_appointments_tool(ehr, providers, exits)]
+    functions: list[FlowsFunctionSchema | FlowsDirectFunction] = [
+        find_slots_tool(ehr, providers, exits),
+        list_appointments_tool(ehr, providers, exits),
+    ]
     return {
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],
