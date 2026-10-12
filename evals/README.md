@@ -33,8 +33,10 @@ With the local EHR stack up, this runs every scenario three times for a named LL
 
 ```
 cd evals
-uv run --env-file ../.env clinic-evals --config haiku
+ALLOW_PAID_CALLS=1 uv run --env-file ../.env clinic-evals --config haiku
 ```
+
+A batch spends real money, so it refuses to start without `ALLOW_PAID_CALLS=1` in the command, and prints an estimate before the first run. `--max-dollars <n>` stops the batch after the run that takes the cost so far, the agent's plus the simulated Caller's, to `n` or more. What ran stays saved, and the batch can overshoot by one run. It needs a price for both models. The batch ends with the total spent. `--report` never costs anything and needs no opt-in.
 
 `--repeats` changes the count and `--scenario <name>` picks scenarios. It needs `ANTHROPIC_API_KEY` for the simulated Caller and the agent config's own key. It prints each run's result, then a report, and saves every transcript, tool call and measurement to `evals/results/<batch>.json`, which version control ignores. With the Langfuse keys set, each run becomes a trace named `eval <scenario>`, tagged `eval`, the config name and the scenario, in one session per batch, with a boolean score per grader and the reason as the score's comment. Without them the scores stay local, with a warning. Transcripts never go to Langfuse. Reasons quote the agent's lines, so they first pass through the agent's PHI mask, the one `docs/phi-policy.md` describes, taught the run's seeded Patient. The results file keeps transcripts as they were said, with synthetic data only.
 
@@ -44,7 +46,7 @@ The report has one column per LLM config:
 - Per-turn latency, P50 and P95: from the Caller's line to the agent finishing its turn, tool time included. This is the wait until the agent stops talking, which is longer than a phone's wait for the first word.
 - LLM time to first token, P50 and P95: for each run of the agent's LLM, how long it took to start answering, as the LLM service reports it. A turn with a tool call runs the LLM more than once. This is the part of a phone Caller's wait for the first word that the LLM config decides.
 - Tool time, P50 and P95, across every tool call.
-- Cost per call and tokens per call, for the agent's LLM only. Speech, telephony and the simulated Caller are not counted. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `evals/src/clinic_evals/cost.py`, and Gemini from OpenRouter's, with its cached tokens at the full input rate since OpenRouter lists no cache rates. A config without a price there shows tokens and `n/a`.
+- Cost per call and tokens per call, for the agent's LLM only. Speech and telephony are not counted, and neither is the simulated Caller, whose tokens a run saves as `caller_usage`. Haiku 4.5 and 5.5 are priced from Anthropic's list prices in `agent/src/clinic_agent/cost.py`, and Gemini from OpenRouter's, with its cached tokens at the full input rate since OpenRouter lists no cache rates. A config without a price there shows tokens and `n/a`.
 
 `clinic-evals --report` prints the latest saved batch of each config side by side without running anything. Run each config once to compare them.
 

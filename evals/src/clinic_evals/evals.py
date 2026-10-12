@@ -12,6 +12,7 @@ from pipecat.services.llm_service import LLMService
 
 from clinic_agent.llm import LLM_CONFIGS
 from clinic_agent.phi import DATE_OF_BIRTH, NAME, PHI, PHONE
+from clinic_evals.budget import run_dollars, unpriced_models
 from clinic_evals.caller import Caller
 from clinic_evals.graders import Grade, grade
 from clinic_evals.langfuse import Langfuse, LangfuseError
@@ -45,10 +46,19 @@ async def run_evals(
     results_dir: Path = RESULTS_DIR,
     reply_timeout_secs: float = 10,
     noise_rate: float = 0.0,  # only recorded: the caller factory is what applies noise
+    max_dollars: float | None = None,
 ) -> list[RunResult]:
-    """Runs one at a time, so runs never share the EHR. Each result is saved and pushed as soon as it is graded."""
+    """Runs one at a time, so runs never share the EHR. Each result is saved and pushed as soon as it is graded.
+
+    With max_dollars, the batch stops after the run that takes the agent-plus-Caller cost to the limit, so it
+    can overshoot by one run. What ran stays saved.
+    """
+    if max_dollars is not None and (unpriced := unpriced_models(config)):
+        raise ValueError(f"{', '.join(unpriced)} has no price, so a limit of ${max_dollars:.2f} can't be enforced")
     batch_id = f"eval-{config}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     results = []
+    planned = len(scenarios) * repeats
+    spent = 0.0
     for scenario in scenarios:
         for repeat in range(1, repeats + 1):
             started = datetime.now(UTC)
@@ -61,6 +71,14 @@ async def run_evals(
             _save(results, config, noise_rate, results_dir / f"{batch_id}.json")
             if langfuse:
                 _push(langfuse, result, config)
+            spent += run_dollars(config, record) or 0.0
+            if max_dollars is not None and spent >= max_dollars and len(results) < planned:
+                print(
+                    f"Stopped after {len(results)} of {planned} runs: spent ${spent:.4f}, "
+                    f"which reaches the limit of ${max_dollars:.2f}. The runs so far are saved.",
+                    flush=True,
+                )
+                return results
     return results
 
 
@@ -116,6 +134,7 @@ def batch_document(results: list[RunResult], config: str, noise_rate: float) -> 
             "turn_secs": r.record.turn_secs,
             "llm_ttfb_secs": r.record.llm_ttfb_secs,
             "usage": asdict(r.record.usage),
+            "caller_usage": asdict(r.record.caller_usage),
             "noise": [
                 {"turn": n.turn, "category": n.confusion.category, "said": n.confusion.said, "heard": n.confusion.heard, "source": n.confusion.source}
                 for n in r.record.noise

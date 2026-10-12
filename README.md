@@ -180,6 +180,16 @@ cd fhir && uv run pytest
 
 The adapter tests need Node 24 and pnpm. The [evals](evals/README.md) can also run whole conversations against a real LLM, with a second LLM playing the patient, and score them. Those runs cost money and never run in CI.
 
+## Paid calls
+
+Real-model test runs and eval batches spend real money, and an agent can drain a budget before anyone notices. Three guards stop that:
+
+- `pytest --llm <config>` and `clinic-evals --config <config>` exit before any call unless the command sets `ALLOW_PAID_CALLS=1`. Both print an estimate first and the actual spend at the end.
+- `clinic-evals --max-dollars <n>` caps a batch.
+- A Claude Code hook, `.claude/hooks/block-paid-calls.sh`, blocks Claude from running those commands, or anything with `--env-file ../.env`, unless the command sets `ALLOW_PAID_CALLS=1`. It doesn't affect commands you type yourself.
+
+Scripted suites and CI never need the opt-in.
+
 ## What's in the repo
 
 ```text

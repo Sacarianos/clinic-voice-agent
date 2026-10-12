@@ -5,16 +5,15 @@ import time
 from collections.abc import Callable
 
 from loguru import logger
-from pipecat.metrics.metrics import LLMTokenUsage
 from pipecat.services.llm_service import LLMService
-from pipecat.services.openai.llm import OpenAILLMService
 
+from clinic_agent.cost import token_usage
 from clinic_agent.ehr import EhrAdapter
 from clinic_agent.text_call import TextCall
 from clinic_evals.caller import Caller
 from clinic_evals.ehr_records import EhrRecords
 from clinic_evals.noise import NoisyCaller
-from clinic_evals.record import Ending, RunRecord, Seeded, TokenUsage
+from clinic_evals.record import Ending, RunRecord, Seeded
 from clinic_evals.scenario import Scenario
 
 # A call that hasn't ended after this many Caller lines is going in circles.
@@ -62,20 +61,8 @@ async def run_scenario(
         list(noise),
         turn_secs,
         list(call.llm_ttfb_secs),
-        _token_usage(llm, call.llm_usage),
-    )
-
-
-def _token_usage(llm: LLMService, reported: list[LLMTokenUsage]) -> TokenUsage:
-    """Adds up what the LLM reported. OpenAI-compatible services count cached input inside prompt_tokens, the rest outside it."""
-    gross = isinstance(llm, OpenAILLMService)
-    cache_read = sum(usage.cache_read_input_tokens or 0 for usage in reported)
-    prompt = sum(usage.prompt_tokens for usage in reported)
-    return TokenUsage(
-        input_tokens=prompt - cache_read if gross else prompt,
-        output_tokens=sum(usage.completion_tokens for usage in reported),
-        cache_read_tokens=cache_read,
-        cache_write_tokens=sum(usage.cache_creation_input_tokens or 0 for usage in reported),
+        token_usage(llm, call.llm_usage),
+        simulated.usage,
     )
 
 

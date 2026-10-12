@@ -8,9 +8,8 @@ import json
 from pathlib import Path
 from statistics import fmean
 
-from clinic_evals.cost import call_cost
+from clinic_agent.cost import TokenUsage, call_cost
 from clinic_evals.graders import GRADERS
-from clinic_evals.record import TokenUsage
 
 LABEL_WIDTH = 38
 COLUMN_WIDTH = 20

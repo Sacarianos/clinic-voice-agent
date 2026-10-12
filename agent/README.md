@@ -88,8 +88,10 @@ uv run pytest
 A scripted fake plays the LLM by default. `--llm haiku` or `--llm gemini` runs the same calls against the real model, with its key from `.env`. Tests that need the fake to force a move a real model wouldn't make are skipped then:
 
 ```
-uv run --env-file ../.env pytest --llm haiku
+ALLOW_PAID_CALLS=1 uv run --env-file ../.env pytest --llm haiku
 ```
+
+This spends real money, so it refuses to start without `ALLOW_PAID_CALLS=1` in the command, and prints what it expects to cost before the first call. Set it for that one command, never in `.env` or for the whole shell. The run ends with a line of calls, tokens and dollars per model. The estimate in `agent/tests/conftest.py` is a rough guess, so check it against that line.
 
 A conversation test opens a `TextCall` with what the fake LLM should do, speaks Caller lines, and checks what the agent said, the tools it called and was offered, the state the call reached, and the FHIR records:
 
