@@ -50,7 +50,10 @@ def run(*, failed=(), turns=(), first_tokens=(), tools=(), usage=None, error=Non
         "repeat": 1,
         "ending": "caller_hung_up",
         "error": error,
-        "grades": [{"grader": name, "passed": name not in failed, "reason": "because" if name in failed else None} for name in GRADERS],
+        "grades": [
+            {"grader": name, "passed": name not in failed, "reason": "because" if name in failed else None}
+            for name in GRADERS
+        ],
         "turn_secs": list(turns),
         "llm_ttfb_secs": list(first_tokens),
         "tool_calls": [{"name": name, "arguments": {}, "result": {}, "duration_secs": secs} for name, secs in tools],
@@ -74,8 +77,19 @@ HAIKU = batch(
     "haiku",
     "claude-haiku-4-5",
     [
-        run(turns=[1, 2], first_tokens=[0.4, 0.8], tools=[("verify_patient", 0.1)], usage={"input_tokens": 10_000, "output_tokens": 1_000, "cache_read_tokens": 0, "cache_write_tokens": 0}),
-        run(failed=["say_do_match"], turns=[3, 5], first_tokens=[0.5, 0.8], tools=[("find_slots", 0.3)], usage={"input_tokens": 20_000, "output_tokens": 2_000, "cache_read_tokens": 0, "cache_write_tokens": 0}),
+        run(
+            turns=[1, 2],
+            first_tokens=[0.4, 0.8],
+            tools=[("verify_patient", 0.1)],
+            usage={"input_tokens": 10_000, "output_tokens": 1_000, "cache_read_tokens": 0, "cache_write_tokens": 0},
+        ),
+        run(
+            failed=["say_do_match"],
+            turns=[3, 5],
+            first_tokens=[0.5, 0.8],
+            tools=[("find_slots", 0.3)],
+            usage={"input_tokens": 20_000, "output_tokens": 2_000, "cache_read_tokens": 0, "cache_write_tokens": 0},
+        ),
     ],
 )
 OTHER = batch("gemini", "google/some-model", [run(turns=[10]), run(turns=[20]), run(turns=[30])])

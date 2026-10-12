@@ -16,7 +16,7 @@ from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
 from clinic_agent.audit import Write
 from clinic_agent.callback_requests import handoff, unless_the_call_is_ending
 from clinic_agent.clinic import CLINIC_TIMEZONE
-from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, WriteOutcome
+from clinic_agent.ehr import EhrAdapter, Provider, Slot, SlotSearch, VisitType, WriteOutcome
 from clinic_agent.holding import with_holding_line
 from clinic_agent.read_back import read_back_node, write_node
 from clinic_agent.timeouts import tool_timeout
@@ -181,7 +181,7 @@ class _Booking:
             return {"status": "unknown_visit_type", "visit_types": list(VISIT_TYPES)}, None
         return {"status": "chosen"}, self._read_back_node(slot, args["visit_type"])
 
-    def _book_tool(self, slot: Slot, visit_type: str) -> FlowsFunctionSchema:
+    def _book_tool(self, slot: Slot, visit_type: VisitType) -> FlowsFunctionSchema:
         # One key per Read-back: a retry of this Book is the same write, never a second Appointment.
         idempotency_key = str(uuid.uuid4())
 
@@ -212,7 +212,7 @@ class _Booking:
         description = "Book exactly what you read back, now that the caller has said yes to it."
         return write_tool("book_appointment", description, book_appointment)
 
-    def _read_back_node(self, slot: Slot, visit_type: str) -> NodeConfig:
+    def _read_back_node(self, slot: Slot, visit_type: VisitType) -> NodeConfig:
         return read_back_node(
             "read_back",
             f"Just to confirm, {_details(slot, visit_type)}. Is that right?",

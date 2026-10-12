@@ -18,6 +18,7 @@ from fakes import ScriptedLLM
 from faulty_adapter import FaultyAdapter
 from langfuse_stand_in import FakeLangfuse
 from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
 
 from clinic_agent.audit import AuditLog
 from clinic_agent.conversation import ROLE
@@ -150,7 +151,9 @@ def langfuse():
     assert configure_tracing(env) is True
     yield server
     # Flush and stop the exporter while the server can still answer it.
-    trace.get_tracer_provider().shutdown()
+    provider = trace.get_tracer_provider()
+    assert isinstance(provider, TracerProvider)  # configure_tracing installed the SDK's
+    provider.shutdown()
     server.close()
 
 

@@ -68,7 +68,7 @@ class ScriptedCaller(FrameProcessor):
             isinstance(frame, BotStoppedSpeakingFrame) and not talks_over
         ):
             line = self.lines.pop(0)
-            self.create_task(self._say(line.line if talks_over else line))
+            self.create_task(self._say(line.line if isinstance(line, TalkOver) else line))
 
     @traced_stt
     async def _say(self, line: str):

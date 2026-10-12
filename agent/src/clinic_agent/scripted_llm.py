@@ -64,7 +64,7 @@ class ScriptedLLM(LLMService):
                 seed=None,
                 filter_incomplete_user_turns=None,
                 user_turn_completion_config=None,
-            )
+            ),
         )
         self.steps = list(steps)
         self._usage = usage  # what each run reports as its token usage, when set

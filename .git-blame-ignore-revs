@@ -1,0 +1,6 @@
+# Pure formatting and import-order commits. GitHub honours this file in blame. Locally:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# ruff format
+28a65fad697286ed349ecee3e4a88254b22de672
+# ruff import sort
+b8234c86ae520f312dc75a9fb665de2d790ce76c

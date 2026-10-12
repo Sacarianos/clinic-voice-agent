@@ -5,6 +5,7 @@ from datetime import date
 from typing import Protocol
 
 from anthropic import AsyncAnthropic
+from anthropic.types import MessageParam
 
 from clinic_agent.booking import spoken_time
 from clinic_agent.conversation import CLINIC_NAME
@@ -24,7 +25,10 @@ class Reply:
 
 
 class Caller(Protocol):
-    usage: TokenUsage  # what the Caller's own LLM has used so far, nothing for a script
+    @property
+    def usage(self) -> TokenUsage:
+        """What the Caller's own LLM has used so far, nothing for a script."""
+        ...
 
     async def reply(self, agent_said: str) -> Reply: ...
 
@@ -47,7 +51,7 @@ class SimulatedCaller:
         self.persona = persona(scenario, seeded)
         self._client = client
         self._model = model
-        self._messages: list[dict] = []
+        self._messages: list[MessageParam] = []
         self.usage = TokenUsage()
 
     async def reply(self, agent_said: str) -> Reply:

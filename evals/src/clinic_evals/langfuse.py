@@ -19,7 +19,6 @@ import httpx
 from clinic_agent.tracing import DEFAULT_LANGFUSE_BASE_URL
 from clinic_evals.graders import Grade
 
-
 # The Hobby tier rate-limits the scores API, and a batch posts several scores per run.
 ATTEMPTS = 5
 
@@ -29,7 +28,9 @@ class LangfuseError(RuntimeError):
 
 
 class Langfuse:
-    def __init__(self, base_url: str, public_key: str, secret_key: str, *, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self, base_url: str, public_key: str, secret_key: str, *, transport: httpx.BaseTransport | None = None
+    ):
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"), auth=(public_key, secret_key), transport=transport, timeout=30
         )

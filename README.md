@@ -182,6 +182,14 @@ The second command points the suites at that stack, so you can run one suite by 
 
 The [evals](evals/README.md) can also run whole conversations against a real LLM, with a second LLM playing the patient, and score them. Those runs cost money and never run in CI.
 
+## Lint and rule checks
+
+```bash
+scripts/lint
+```
+
+It needs only uv and runs in seconds. It checks Python style and types with ruff and pyright, and three project rules: no `register_function` in the agent, because it bypasses tool gating ([ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md)), no em or en dashes in docs and comments, and no AI co-author trailers in commits. CI runs it as its own job. `uvx pre-commit install` runs the same checks before each commit.
+
 ## Paid calls
 
 Real-model test runs and eval batches spend real money, and an agent can drain a budget before anyone notices. Three guards stop that:

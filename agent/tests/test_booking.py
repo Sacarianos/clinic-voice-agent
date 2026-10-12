@@ -114,9 +114,7 @@ async def test_a_no_to_the_read_back_goes_back_to_choosing_and_a_book_called_at_
             "Sorry about that. Which time would you like instead?",
         ]
     ) as call:
-        await call.converse(
-            ["I'd like an appointment.", f"Rosalind Okonkwo, {spoken(born)}.", "9 AM, a sick visit."]
-        )
+        await call.converse(["I'd like an appointment.", f"Rosalind Okonkwo, {spoken(born)}.", "9 AM, a sick visit."])
         assert call.state == "read_back"
         at_read_back = len(call.offered_tools)
 

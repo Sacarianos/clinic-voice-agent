@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Any
 
 from pipecat.metrics.metrics import LLMTokenUsage
 from pipecat.services.llm_service import LLMService
@@ -59,8 +60,11 @@ def call_cost(model: str | None, usage: TokenUsage) -> float | None:
     ) / 1_000_000
 
 
-def token_usage(llm: LLMService, reported: list[LLMTokenUsage]) -> TokenUsage:
-    """Adds up what the LLM reported. OpenAI-compatible services count cached input inside prompt_tokens, the rest outside it."""
+def token_usage(llm: LLMService[Any], reported: list[LLMTokenUsage]) -> TokenUsage:
+    """Adds up what the LLM reported.
+
+    OpenAI-compatible services count cached input inside prompt_tokens, the rest outside it.
+    """
     gross = isinstance(llm, OpenAILLMService)
     cache_read = sum(usage.cache_read_input_tokens or 0 for usage in reported)
     prompt = sum(usage.prompt_tokens for usage in reported)
@@ -86,12 +90,16 @@ class Ledger:
     def dollars(self) -> float | None:
         """None when any model has no price, since the total would then understate what was spent."""
         costs = [call_cost(model, usage) for model, usage in self._usage.items()]
-        return None if None in costs else sum(costs)
+        priced = [cost for cost in costs if cost is not None]
+        return sum(priced) if len(priced) == len(costs) else None
 
     def summary(self) -> str:
         if not self._usage:
             return "Paid LLM calls: none"
-        parts = [f"{model} {self._calls[model]} calls, {_tokens(usage)}, {_dollars(call_cost(model, usage))}" for model, usage in self._usage.items()]
+        parts = [
+            f"{model} {self._calls[model]} calls, {_tokens(usage)}, {_dollars(call_cost(model, usage))}"
+            for model, usage in self._usage.items()
+        ]
         return f"Paid LLM calls: {'; '.join(parts)}; total {_dollars(self.dollars())}"
 
 

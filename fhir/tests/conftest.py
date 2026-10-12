@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+
 from clinic_seed.clinic import MRN_SYSTEM, PROVIDER_SYSTEM, PROVIDERS, SCHEDULE_SYSTEM, SLOT_SYSTEM
 
 FHIR_BASE_URL = os.environ.get("FHIR_BASE_URL", "http://localhost:8080/fhir").rstrip("/")

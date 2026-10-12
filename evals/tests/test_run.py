@@ -154,7 +154,11 @@ async def test_a_run_records_each_turns_latency_the_llms_time_to_first_token_the
 ):
     scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
     per_llm_run = LLMTokenUsage(
-        prompt_tokens=1000, completion_tokens=20, cache_read_input_tokens=300, cache_creation_input_tokens=50, total_tokens=1370
+        prompt_tokens=1000,
+        completion_tokens=20,
+        cache_read_input_tokens=300,
+        cache_creation_input_tokens=50,
+        total_tokens=1370,
     )
 
     run = await run_scenario(

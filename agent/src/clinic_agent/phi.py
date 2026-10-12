@@ -2,8 +2,8 @@
 
 Logs and trace exports pass everything they write through `PHI.mask`. It masks in four ways:
 
-- What the Caller says, or types on the browser page, before Identity Verification succeeds is masked whole. Until then there is no
-  telling which words are a name, so every utterance is a phrase to mask wherever it shows up later:
+- What the Caller says, or types on the browser page, before Identity Verification succeeds is masked whole. Until
+  then there is no telling which words are a name, so every utterance is a phrase to mask wherever it shows up later:
   in the LLM context, in an STT span, or in a tool call.
 - Values under keys that hold a name, date of birth or phone number (`given_name`, `birthDate`,
   `from_number` and so on) are masked in key-value text, JSON and FHIR-shaped data alike, and wherever

@@ -43,7 +43,10 @@ def is_uuid(value) -> bool:
 
 @asynccontextmanager
 async def booking(ehr, start_call, adapter_url):
-    """A Verified Patient's call, stopped at the Read-back of a Book. Yields (call, patient_id, slot_id, caller lines)."""
+    """A Verified Patient's call, stopped at the Read-back of a Book.
+
+    Yields (call, patient_id, slot_id, caller lines).
+    """
     born = ehr.unused_birth_date()
     patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
     faraday = ehr.create_provider(given="Imogen", family="Faraday")
@@ -178,5 +181,12 @@ async def test_the_audit_log_holds_no_names_dates_of_birth_or_anything_the_calle
     recorded = [json.dumps(entry) for entry in entries_for(audit_log, patient_id)]
     assert len(recorded) == 4
     text = "\n".join(recorded).casefold()
-    for forbidden in ["rosalind", "okonkwo", born, spoken(born).casefold(), call.caller_phone, *map(str.casefold, lines)]:
+    for forbidden in [
+        "rosalind",
+        "okonkwo",
+        born,
+        spoken(born).casefold(),
+        call.caller_phone,
+        *map(str.casefold, lines),
+    ]:
         assert forbidden not in text

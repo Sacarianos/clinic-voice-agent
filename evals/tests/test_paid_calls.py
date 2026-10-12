@@ -111,11 +111,20 @@ def handoff_agent(usage: LLMTokenUsage | None = None):
 async def test_a_batch_stops_when_the_callers_spending_reaches_the_limit_and_saves_what_ran(ehr_urls, tmp_path, capsys):
     scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
     # Claude Haiku 4.5 plays the Caller at $1 per million input tokens: one million is $1 a run.
-    caller = lambda scenario, seeded: CallerThatSpends(["Can I talk to a real person, please?"], TokenUsage(input_tokens=1_000_000))
+
+    def caller(scenario, seeded):
+        return CallerThatSpends(["Can I talk to a real person, please?"], TokenUsage(input_tokens=1_000_000))
 
     results = await run_evals(
-        [scenario], config="haiku", repeats=5, ehr_urls=ehr_urls, agent=handoff_agent(), caller=caller,
-        langfuse=None, results_dir=tmp_path, max_dollars=1.5,
+        [scenario],
+        config="haiku",
+        repeats=5,
+        ehr_urls=ehr_urls,
+        agent=handoff_agent(),
+        caller=caller,
+        langfuse=None,
+        results_dir=tmp_path,
+        max_dollars=1.5,
     )
 
     assert [r.repeat for r in results] == [1, 2]
@@ -130,9 +139,15 @@ async def test_a_batch_stops_when_the_agents_spending_reaches_the_limit(ehr_urls
     per_llm_run = LLMTokenUsage(prompt_tokens=1_000_000, completion_tokens=0, total_tokens=1_000_000)
 
     results = await run_evals(
-        [scenario], config="haiku", repeats=5, ehr_urls=ehr_urls, agent=handoff_agent(per_llm_run),
+        [scenario],
+        config="haiku",
+        repeats=5,
+        ehr_urls=ehr_urls,
+        agent=handoff_agent(per_llm_run),
         caller=lambda scenario, seeded: ScriptedCaller(["Can I talk to a real person, please?"]),
-        langfuse=None, results_dir=tmp_path, max_dollars=0.05,
+        langfuse=None,
+        results_dir=tmp_path,
+        max_dollars=0.05,
     )
 
     assert [r.repeat for r in results] == [1]
@@ -142,9 +157,14 @@ async def test_without_a_limit_every_run_happens(ehr_urls, tmp_path):
     scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
 
     results = await run_evals(
-        [scenario], config="haiku", repeats=2, ehr_urls=ehr_urls, agent=handoff_agent(),
+        [scenario],
+        config="haiku",
+        repeats=2,
+        ehr_urls=ehr_urls,
+        agent=handoff_agent(),
         caller=lambda scenario, seeded: ScriptedCaller(["Can I talk to a real person, please?"]),
-        langfuse=None, results_dir=tmp_path,
+        langfuse=None,
+        results_dir=tmp_path,
     )
 
     assert len(results) == 2
@@ -155,8 +175,15 @@ async def test_a_limit_cannot_be_enforced_for_a_config_with_no_price(ehr_urls, t
 
     with pytest.raises(ValueError, match="no price"):
         await run_evals(
-            [scenario], config="scripted", repeats=1, ehr_urls=ehr_urls, agent=handoff_agent(),
-            caller=lambda scenario, seeded: ScriptedCaller(["hi"]), langfuse=None, results_dir=tmp_path, max_dollars=1,
+            [scenario],
+            config="scripted",
+            repeats=1,
+            ehr_urls=ehr_urls,
+            agent=handoff_agent(),
+            caller=lambda scenario, seeded: ScriptedCaller(["hi"]),
+            langfuse=None,
+            results_dir=tmp_path,
+            max_dollars=1,
         )
 
 
@@ -165,11 +192,21 @@ async def test_a_run_saves_what_the_simulated_caller_used(ehr_urls, tmp_path):
     spent = TokenUsage(input_tokens=1_234, output_tokens=56)
 
     await run_evals(
-        [scenario], config="haiku", repeats=1, ehr_urls=ehr_urls, agent=handoff_agent(),
+        [scenario],
+        config="haiku",
+        repeats=1,
+        ehr_urls=ehr_urls,
+        agent=handoff_agent(),
         caller=lambda scenario, seeded: CallerThatSpends(["Can I talk to a real person, please?"], spent),
-        langfuse=None, results_dir=tmp_path,
+        langfuse=None,
+        results_dir=tmp_path,
     )
 
     [saved] = tmp_path.glob("*.json")
     [run] = json.loads(saved.read_text())["runs"]
-    assert run["caller_usage"] == {"input_tokens": 1_234, "output_tokens": 56, "cache_read_tokens": 0, "cache_write_tokens": 0}
+    assert run["caller_usage"] == {
+        "input_tokens": 1_234,
+        "output_tokens": 56,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+    }
