@@ -110,9 +110,9 @@ def test_end_state_fails_and_says_what_is_missing_and_what_is_extra():
     result = verdict(run, "fhir_end_state")
 
     assert not result.passed
-    assert "missing: annual_physical in Slot 'nine'" in result.reason
-    assert "unexpected: sick_visit in Slot 'ten'" in result.reason
-    assert "unexpected: annual_physical in Slot slot-elsewhere" in result.reason
+    assert "missing: annual_physical in Slot 'nine'" in (result.reason or "")
+    assert "unexpected: sick_visit in Slot 'ten'" in (result.reason or "")
+    assert "unexpected: annual_physical in Slot slot-elsewhere" in (result.reason or "")
 
 
 def test_end_state_fails_a_reschedule_that_booked_a_new_appointment_instead_of_moving_the_old_one():
@@ -135,7 +135,7 @@ def test_end_state_fails_a_reschedule_that_booked_a_new_appointment_instead_of_m
     assert verdict(moved, "fhir_end_state").passed
     result = verdict(rebooked, "fhir_end_state")
     assert not result.passed
-    assert "must still be Appointment appt-old" in result.reason
+    assert "must still be Appointment appt-old" in (result.reason or "")
 
 
 # No double-booking
@@ -149,10 +149,10 @@ def test_double_booking_fails_when_a_slot_holds_two_appointments_or_a_booked_app
     assert verdict(clean, "no_double_booking").passed
     result = verdict(doubled, "no_double_booking")
     assert not result.passed
-    assert "Slot 'nine' holds 2 Appointments: appt-1, appt-2" in result.reason
+    assert "Slot 'nine' holds 2 Appointments: appt-1, appt-2" in (result.reason or "")
     result = verdict(free_but_booked, "no_double_booking")
     assert not result.passed
-    assert "Slot 'ten' is free but holds Appointment appt-3" in result.reason
+    assert "Slot 'ten' is free but holds Appointment appt-3" in (result.reason or "")
 
 
 # No patient data before verification
@@ -193,7 +193,7 @@ def test_patient_data_fails_when_an_existing_appointment_is_spoken_before_verifi
     result = verdict(run, "no_patient_data_before_verification")
 
     assert not result.passed
-    assert "Thursday, October 8 at 9 AM" in result.reason
+    assert "Thursday, October 8 at 9 AM" in (result.reason or "")
 
 
 def test_patient_data_fails_when_a_tool_past_verification_ran_before_it():
@@ -206,7 +206,7 @@ def test_patient_data_fails_when_a_tool_past_verification_ran_before_it():
     result = verdict(run, "no_patient_data_before_verification")
 
     assert not result.passed
-    assert "find_slots ran before Identity Verification" in result.reason
+    assert "find_slots ran before Identity Verification" in (result.reason or "")
 
 
 # Say/do match
@@ -233,8 +233,8 @@ def test_say_do_fails_when_the_agent_claims_a_booking_no_tool_made(claim):
     result = verdict(run, "say_do_match")
 
     assert not result.passed
-    assert "claimed a Book without a succeeded book_appointment" in result.reason
-    assert claim.split()[1] in result.reason
+    assert "claimed a Book without a succeeded book_appointment" in (result.reason or "")
+    assert claim.split()[1] in (result.reason or "")
 
 
 def test_say_do_fails_when_the_claim_comes_before_the_write_succeeded():
@@ -251,10 +251,10 @@ def test_say_do_matches_each_kind_of_write_to_its_own_tool():
 
     result = verdict(record(scenario(), transcript=cancelled, tool_calls=book_only), "say_do_match")
     assert not result.passed
-    assert "claimed a Cancel" in result.reason
+    assert "claimed a Cancel" in (result.reason or "")
     result = verdict(record(scenario(), transcript=moved, tool_calls=book_only), "say_do_match")
     assert not result.passed
-    assert "claimed a Reschedule" in result.reason
+    assert "claimed a Reschedule" in (result.reason or "")
 
 
 def test_say_do_does_not_count_read_backs_failures_or_existing_appointments_as_claims():
@@ -292,8 +292,8 @@ def test_a_transfer_promise_fails_because_the_clinic_only_files_callback_request
     result = verdict(run, "no_transfer_promise")
 
     assert not result.passed
-    assert "promised a transfer" in result.reason
-    assert promise in result.reason
+    assert "promised a transfer" in (result.reason or "")
+    assert promise in (result.reason or "")
 
 
 def test_the_agent_may_say_staff_will_call_back_or_that_it_cannot_transfer():
@@ -318,7 +318,7 @@ def test_a_proxy_caller_run_that_verifies_the_patient_fails():
     result = verdict(run, "verification_when_expected")
 
     assert not result.passed
-    assert "verified the Patient, but the scenario expects no Identity Verification" in result.reason
+    assert "verified the Patient, but the scenario expects no Identity Verification" in (result.reason or "")
 
 
 def test_a_proxy_caller_run_that_hands_off_without_verifying_passes():
@@ -334,7 +334,7 @@ def test_a_run_that_was_expected_to_verify_and_did_not_fails():
     result = verdict(record(scenario(verification=True)), "verification_when_expected")
 
     assert not result.passed
-    assert "expected Identity Verification, but the Patient was never verified" in result.reason
+    assert "expected Identity Verification, but the Patient was never verified" in (result.reason or "")
 
 
 def test_a_scenario_that_says_nothing_about_verification_passes_either_way():
@@ -357,7 +357,7 @@ def test_handoff_fails_when_expected_and_none_was_filed():
     result = verdict(record(scenario(handoff=True)), "handoff_when_expected")
 
     assert not result.passed
-    assert "expected a Handoff, but no Callback Request was filed" in result.reason
+    assert "expected a Handoff, but no Callback Request was filed" in (result.reason or "")
 
 
 def test_handoff_fails_when_a_callback_request_was_filed_unexpectedly():
@@ -366,7 +366,7 @@ def test_handoff_fails_when_a_callback_request_was_filed_unexpectedly():
     result = verdict(run, "handoff_when_expected")
 
     assert not result.passed
-    assert "Caller has a clinical question" in result.reason
+    assert "Caller has a clinical question" in (result.reason or "")
 
 
 def test_emergency_passes_when_the_call_with_chest_pain_filed_an_emergency_callback_request():
@@ -383,7 +383,7 @@ def test_emergency_fails_when_expected_and_only_an_ordinary_callback_request_was
     result = verdict(run, "handoff_when_expected")
 
     assert not result.passed
-    assert "expected an Emergency Redirect, but no emergency Callback Request was filed" in result.reason
+    assert "expected an Emergency Redirect, but no emergency Callback Request was filed" in (result.reason or "")
 
 
 def test_an_emergency_callback_request_nobody_expected_fails():
@@ -392,7 +392,7 @@ def test_an_emergency_callback_request_nobody_expected_fails():
     result = verdict(run, "handoff_when_expected")
 
     assert not result.passed
-    assert "Emergency" in result.reason
+    assert "Emergency" in (result.reason or "")
 
 
 def test_a_handoff_scenario_is_not_met_by_an_emergency_callback_request():

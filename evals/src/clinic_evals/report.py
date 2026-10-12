@@ -90,9 +90,10 @@ def _usages(document: dict) -> list[TokenUsage]:
 
 def _cost_per_call(document: dict) -> str:
     costs = [call_cost(document.get("model"), usage) for usage in _usages(document)]
-    if not costs or None in costs:
+    priced = [cost for cost in costs if cost is not None]
+    if not costs or len(priced) != len(costs):
         return "n/a"
-    return f"${fmean(costs):.4f}"
+    return f"${fmean(priced):.4f}"
 
 
 def _tokens_per_call(document: dict) -> str:

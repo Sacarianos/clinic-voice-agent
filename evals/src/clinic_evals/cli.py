@@ -35,7 +35,7 @@ DEFAULT_NOISE_RATE = 0.2
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="clinic-evals", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="clinic-evals", description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--config", choices=sorted(LLM_CONFIGS), help="the LLM config the agent runs")
     parser.add_argument("--report", action="store_true", help="print the latest saved batch of each config and exit")
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR, help="where batches are saved and read from")
