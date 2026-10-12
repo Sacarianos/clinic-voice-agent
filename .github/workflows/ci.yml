@@ -4,6 +4,22 @@ on:
   push:
 
 jobs:
+  lint:
+    name: Lint, types and rule checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      # setup-uv publishes no floating v10 tag, so pin the v10.2.0 commit.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            agent/uv.lock
+            evals/uv.lock
+      # ruff check, ruff format --check, pyright in basic mode on agent and evals, and scripts/check_rules.py
+      # (no register_function under agent/src, no em or en dash in Markdown or comments). No Docker, no stack.
+      - run: scripts/lint
+
   verify:
     name: Every suite against a fresh stack
     runs-on: ubuntu-24.04

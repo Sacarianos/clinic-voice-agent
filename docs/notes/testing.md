@@ -2,6 +2,10 @@
 
 Rules that hold across the four packages: `adapter/`, `agent/`, `evals/` and `fhir/`. The README shows how to start the local EHR stack and run each package's tests. Checked against the code on 2026-10-12.
 
+## Lint and types
+
+`scripts/lint` runs ruff, pyright and the rule checks without Docker. The README's Lint and rule checks section has the steps. A new rule that review used to catch belongs in `scripts/check_rules.py` with a bad and a good case in its `--self-check`.
+
 ## Paid APIs
 
 The default run costs nothing. A scripted LLM plays the model, fake Deepgram and Twilio stand in for the phone, and CI passes no keys. These runs call paid services, so run them only when the user has approved a number of calls:
