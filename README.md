@@ -14,9 +14,28 @@ One command starts HAPI FHIR, fills it with the fictional clinic and starts the 
 docker compose -f infra/compose.yaml up -d --wait --build
 ```
 
-FHIR base URL: `http://localhost:8080/fhir`. Set `HAPI_PORT` first when 8080 is taken, and `-p <name>` to keep worktrees apart. It holds 60 synthetic adult Patients that Synthea v4.0.0 makes from a fixed seed, three Providers with a Schedule each, and free 30-minute Slots Monday to Friday, 8 to 5 America/New_York time, from the day you start it through 14 days out. `docker compose -f infra/compose.yaml restart seed` runs the seed again and adds any new days. It never changes existing resources. `docker compose -f infra/compose.yaml down -v` wipes the data. Delete `fhir/output` to regenerate the Patients.
+FHIR base URL: `http://localhost:8080/fhir`. Set `HAPI_PORT` first when 8080 is taken, and `-p <name>` to keep worktrees apart, or use `scripts/stack up`, which does both. It holds 60 synthetic adult Patients that Synthea v4.0.0 makes from a fixed seed, three Providers with a Schedule each, and free 30-minute Slots Monday to Friday, 8 to 5 America/New_York time, from the day you start it through 14 days out. `docker compose -f infra/compose.yaml restart seed` runs the seed again and adds any new days. It never changes existing resources. `docker compose -f infra/compose.yaml down -v` wipes the data. Delete `fhir/output` to regenerate the Patients.
 
 `clinic.json` holds the clinic's time zone, opening hours, Slot length, Booking Window and Providers. The seed, the adapter and the agent all read it, and Compose mounts it into the seed and adapter containers at `/clinic.json`.
+
+## Run the tests
+
+```
+scripts/verify
+```
+
+It starts a fresh stack for the current worktree, runs the adapter's tests and typecheck and the agent, evals and seed suites against it, prints one line per suite and one overall line, and removes the stack. It exits non-zero when any suite fails. It needs Docker, Node 24, pnpm and uv, and calls no paid API: the agent and evals suites use the scripted LLM and nothing reads `.env`. Run from Git Bash on Windows, it finds uv and pnpm in winget's install folders when they are not on `PATH`. CI runs the same script. The first run in a worktree is slow, because Synthea makes the Patients and the dependencies install.
+
+`scripts/stack` is the stack on its own. Its Compose project name comes from the worktree's path and Docker picks the host ports, so two worktrees never share a HAPI and can run `scripts/verify` at the same time.
+
+```
+scripts/stack up     # start HAPI, the seed and the adapter, and wait until they are ready
+scripts/stack env    # print the FHIR_BASE_URL and EHR_ADAPTER_URL exports for this worktree's stack
+scripts/stack logs   # the tail of each service's log
+scripts/stack down   # stop it and delete its data
+```
+
+`eval "$(scripts/stack env)"` points one suite at that stack, for example `cd agent && uv run pytest`. The per-suite commands in the sections below still work against the default stack on ports 8080 and 3000.
 
 Seed tests run against that stack, through the FHIR API. They look only at what the seed made, found by the clinic's identifiers, so other suites' records and leftovers from a crashed run don't affect them. They seed again first, which adds today's days to a stack started earlier. CI runs them against a stack it starts the same way:
 
