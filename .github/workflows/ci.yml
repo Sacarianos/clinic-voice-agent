@@ -4,25 +4,9 @@ on:
   push:
 
 jobs:
-  adapter:
-    name: EHR adapter against HAPI
+  verify:
+    name: Every suite against a fresh stack
     runs-on: ubuntu-24.04
-    services:
-      # Empty in-memory HAPI. Adapter tests create the Patients they need.
-      # No health options: the image has no shell, so Docker's --health-cmd can't run in it.
-      # The test run's global setup waits for /fhir/metadata instead.
-      hapi:
-        image: hapiproject/hapi:v8.12.0-2
-        ports:
-          - 8080:8080
-        env:
-          JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m -XX:+UseSerialGC"
-          HAPI_FHIR_FHIR_VERSION: R4
-          HAPI_FHIR_CLIENT_ID_STRATEGY: ANY
-          HAPI_FHIR_REUSE_CACHED_SEARCH_RESULTS_MILLIS: "-1"
-    defaults:
-      run:
-        working-directory: adapter
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -33,73 +17,6 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: adapter/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
-        env:
-          FHIR_BASE_URL: http://localhost:8080/fhir
-      - name: Build the adapter image
-        run: docker build --tag clinic-ehr-adapter .
-
-  seed:
-    name: Seeded clinic in HAPI
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: fhir
-    steps:
-      - uses: actions/checkout@v7
-      # The local stack as a developer runs it: Synthea generates the Patients and the seed loads them into HAPI.
-      - name: Start HAPI and seed it
-        run: docker compose -f ../infra/compose.yaml up -d --wait --build hapi seed
-      # setup-uv publishes no floating v10 tag, so pin the v10.2.0 commit.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
-        with:
-          enable-cache: true
-          cache-dependency-glob: fhir/uv.lock
-      - run: uv sync --frozen
-      - run: uv run pytest
-        env:
-          FHIR_BASE_URL: http://localhost:8080/fhir
-      - name: Show the stack's logs
-        if: failure()
-        run: docker compose -f ../infra/compose.yaml logs --no-color synthea seed hapi
-
-  agent:
-    name: Voice agent against the adapter and HAPI
-    runs-on: ubuntu-24.04
-    services:
-      # Empty in-memory HAPI, as for the adapter job. Conversation tests create the Patients they need.
-      hapi:
-        image: hapiproject/hapi:v8.12.0-2
-        ports:
-          - 8080:8080
-        env:
-          JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m -XX:+UseSerialGC"
-          HAPI_FHIR_FHIR_VERSION: R4
-          HAPI_FHIR_CLIENT_ID_STRATEGY: ANY
-          HAPI_FHIR_REUSE_CACHED_SEARCH_RESULTS_MILLIS: "-1"
-    env:
-      FHIR_BASE_URL: http://localhost:8080/fhir
-      EHR_ADAPTER_URL: http://localhost:3000
-    defaults:
-      run:
-        working-directory: agent
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: adapter/package.json
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: adapter/pnpm-lock.yaml
-      - name: Start the EHR adapter
-        working-directory: adapter
-        run: |
-          pnpm install --frozen-lockfile --prod
-          nohup node src/server.ts > "$RUNNER_TEMP/adapter.log" 2>&1 &
       # setup-uv publishes no floating v10 tag, so pin the v10.2.0 commit.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
@@ -107,16 +24,8 @@ jobs:
           cache-dependency-glob: |
             agent/uv.lock
             evals/uv.lock
-      - run: uv sync --frozen
-      # Fakes stand in for Deepgram and the LLM, so no API keys are needed.
-      # The tests wait for HAPI and the adapter to answer before the first conversation.
-      - run: uv run pytest
-      # The eval harness's own tests: graders, and runs with a scripted agent and Caller. Real evals cost money and never run here.
-      - name: Eval harness tests
-        working-directory: evals
-        run: |
-          uv sync --frozen
-          uv run pytest
-      - name: Show the adapter log
-        if: failure()
-        run: cat "$RUNNER_TEMP/adapter.log"
+            fhir/uv.lock
+      # The script a developer runs: it starts HAPI, the seed and the adapter with Compose, runs the adapter,
+      # agent, evals and seed suites against them, and prints one line per suite. Fakes stand in for Deepgram
+      # and the LLM, so no API keys are needed, and real evals cost money and never run here.
+      - run: scripts/verify
