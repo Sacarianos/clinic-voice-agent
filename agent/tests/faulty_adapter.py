@@ -49,10 +49,11 @@ class FaultyAdapter:
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", 0)
         await site.start()
-        port = site._server.sockets[0].getsockname()[1]
+        port = self._runner.addresses[0][1]
         self.url = f"http://127.0.0.1:{port}"
 
     async def close(self) -> None:
+        assert self._runner is not None  # start() set it
         await self._runner.cleanup()
         await self._adapter.aclose()
 

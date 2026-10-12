@@ -7,6 +7,7 @@ from clinic_agent.config import ConfigError
 from clinic_agent.conversation import ROLE
 from clinic_agent.services import phone_services
 
+# Pipecat types a service's `settings` as the base ServiceSettings, so the fields a service adds need an ignore.
 KEYS = {"DEEPGRAM_API_KEY": "placeholder", "ANTHROPIC_API_KEY": "placeholder"}
 
 
@@ -17,13 +18,13 @@ def test_a_phone_call_hears_with_nova_3_thinks_with_haiku_and_speaks_with_aura_2
     assert services.stt.settings.model == "nova-3-general"
     assert isinstance(services.llm, AnthropicLLMService)
     assert services.llm.settings.model == "claude-haiku-5-5"
-    assert services.llm.settings.system_instruction == ROLE
+    assert services.llm.settings.system_instruction == ROLE  # pyright: ignore[reportAttributeAccessIssue]
     assert isinstance(services.tts, DeepgramTTSService)
-    assert services.tts.settings.voice.startswith("aura-2-")
+    assert services.tts.settings.voice.startswith("aura-2-")  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_speech_to_text_is_prompted_with_the_providers_names():
-    keyterms = phone_services(KEYS)().stt.settings.keyterm
+    keyterms = phone_services(KEYS)().stt.settings.keyterm  # pyright: ignore[reportAttributeAccessIssue]
 
     for name in ["Marcus Whitfield", "Wojciech Szczepanski", "Siobhan Kowalczyk"]:
         assert name in keyterms
