@@ -6,8 +6,8 @@ out. The LLM is whatever it is given: a real configured model or a scripted fake
 """
 
 import asyncio
-import uuid
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -144,6 +144,7 @@ class TextCall:
     async def __aexit__(self, *exc_info) -> None:
         if not self.ended:
             await self._call.worker.queue_frame(EndFrame())
+        assert self._run is not None  # __aenter__ started it
         await asyncio.wait_for(self._run, self._reply_timeout_secs)
 
     async def say(self, line: str) -> str:
@@ -187,15 +188,15 @@ class TextCall:
 
     async def _until(self, awaitable):
         """Awaits it, unless the call ends first. Fails when the agent takes longer than the reply timeout."""
+        run = self._run
+        assert run is not None  # only called once __aenter__ has started the pipeline
         task = asyncio.ensure_future(awaitable)
-        done, _ = await asyncio.wait(
-            {task, self._run}, timeout=self._reply_timeout_secs, return_when=asyncio.FIRST_COMPLETED
-        )
+        done, _ = await asyncio.wait({task, run}, timeout=self._reply_timeout_secs, return_when=asyncio.FIRST_COMPLETED)
         if task in done:
             return task.result()
         task.cancel()
-        if self._run in done:
-            self._run.result()  # surfaces a pipeline crash
+        if run in done:
+            run.result()  # surfaces a pipeline crash
             return None
         raise TimeoutError(f"the agent did not finish its turn within {self._reply_timeout_secs}s: {self.transcript}")
 
@@ -305,7 +306,9 @@ class _TurnWatch(BaseObserver):
             started = self._tools_running.pop(frame.tool_call_id, None)
             took = time.perf_counter() - started if started is not None else 0.0
             position = len(self._call.transcript)
-            self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result, position, took))
+            self._call.tool_calls.append(
+                ToolCall(frame.function_name, dict(frame.arguments), frame.result, position, took)
+            )
         elif isinstance(frame, MetricsFrame) and from_llm:
             self._call.llm_usage += [data.value for data in frame.data if isinstance(data, LLMUsageMetricsData)]
             self._call.llm_ttfb_secs += [data.value for data in frame.data if isinstance(data, TTFBMetricsData)]

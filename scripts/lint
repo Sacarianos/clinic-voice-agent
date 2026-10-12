@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# The fast checks: lint, format, types and the mechanical rules. They need only uv, no Docker and no stack.
+# CI and the pre-commit hooks run these same steps.
+#
+#   scripts/lint            run every step, print one line per step, exit non-zero when any failed
+#   scripts/lint ruff       ruff check and ruff format --check on agent/, evals/, fhir/ and scripts/
+#   scripts/lint pyright    pyright in basic mode on agent/ and evals/
+#   scripts/lint rules      the rule checks in scripts/check_rules.py, after their self-check
+#
+# To repair what ruff reports: uv run --project agent ruff format agent evals fhir scripts, and the same with check --fix.
+set -uo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+
+# winget installs uv outside the PATH an inherited shell has. Look where it puts it.
+if ! command -v uv >/dev/null 2>&1; then
+  winget=""
+  if [ -n "${LOCALAPPDATA:-}" ]; then
+    winget=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")/Microsoft/WinGet
+  fi
+  for dir in "$winget/Links" "$winget"/Packages/*; do
+    if [ -x "$dir/uv" ] || [ -x "$dir/uv.exe" ]; then
+      export PATH="$dir:$PATH"
+      break
+    fi
+  done
+fi
+command -v uv >/dev/null 2>&1 || { echo "scripts/lint: uv is not installed or not on PATH." >&2; exit 2; }
+
+# ruff is a dev dependency of agent/, pinned by agent/uv.lock. It reads ruff.toml at the root.
+ruff() {
+  local status=0
+  uv run --frozen --project agent ruff check agent evals fhir scripts || status=1
+  uv run --frozen --project agent ruff format --check agent evals fhir scripts || status=1
+  return $status
+}
+
+# Each project type-checks against its own environment, so a package it imports is the one it locks.
+pyright() {
+  local status=0 project
+  for project in agent evals; do
+    (cd "$project" && uv run --frozen pyright) || status=1
+  done
+  return $status
+}
+
+rules() {
+  uv run --no-project python scripts/check_rules.py --self-check && uv run --no-project python scripts/check_rules.py
+}
+
+steps=("$@")
+[ ${#steps[@]} -gt 0 ] || steps=(ruff pyright rules)
+
+failed=()
+for step in "${steps[@]}"; do
+  case "$step" in
+    ruff | pyright | rules) ;;
+    *) echo "scripts/lint: unknown step '$step'. Steps: ruff, pyright, rules." >&2; exit 2 ;;
+  esac
+  begin=$SECONDS
+  if "$step"; then
+    printf 'PASS  %-8s %4ss\n' "$step" "$((SECONDS - begin))"
+  else
+    printf 'FAIL  %-8s %4ss\n' "$step" "$((SECONDS - begin))"
+    failed+=("$step")
+  fi
+done
+
+if [ ${#failed[@]} -eq 0 ]; then
+  echo "lint: PASS (${#steps[@]} steps)"
+  exit 0
+fi
+echo "lint: FAIL (${failed[*]})"
+exit 1

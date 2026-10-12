@@ -52,7 +52,10 @@ def format_report(documents: list[dict]) -> str:
         ("tokens per call (in / out)", [_tokens_per_call(d) for d in documents]),
     ]
     lines = ["Pass rate per grader, latency and cost, per LLM config:"]
-    lines += [f"  {label:<{LABEL_WIDTH}}" + "".join(f"{value:<{COLUMN_WIDTH}}" for value in values).rstrip() for label, values in rows]
+    lines += [
+        f"  {label:<{LABEL_WIDTH}}" + "".join(f"{value:<{COLUMN_WIDTH}}" for value in values).rstrip()
+        for label, values in rows
+    ]
     lines += [f"  batch {d['config']}: {d['batch_id']}" for d in documents]
     lines += _problems(documents)
     return "\n".join(lines)
@@ -87,9 +90,10 @@ def _usages(document: dict) -> list[TokenUsage]:
 
 def _cost_per_call(document: dict) -> str:
     costs = [call_cost(document.get("model"), usage) for usage in _usages(document)]
-    if not costs or None in costs:
+    priced = [cost for cost in costs if cost is not None]
+    if not costs or len(priced) != len(costs):
         return "n/a"
-    return f"${fmean(costs):.4f}"
+    return f"${fmean(priced):.4f}"
 
 
 def _tokens_per_call(document: dict) -> str:

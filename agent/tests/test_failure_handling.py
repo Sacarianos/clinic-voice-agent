@@ -60,7 +60,9 @@ async def test_a_failed_book_is_retried_once_with_the_same_key_and_booked_once(e
         assert ehr.callback_requests_from(call.caller_phone) == []
 
 
-async def test_a_book_that_fails_twice_hands_off_with_a_callback_request_and_claims_nothing(ehr, start_call, faulty_adapter):
+async def test_a_book_that_fails_twice_hands_off_with_a_callback_request_and_claims_nothing(
+    ehr, start_call, faulty_adapter
+):
     faulty_adapter.inject("server_error", into=BOOK, times=2)
     async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
         reply = await call.say("Yes.")
@@ -78,7 +80,9 @@ async def test_a_book_that_fails_twice_hands_off_with_a_callback_request_and_cla
         assert call.ended
 
 
-async def test_a_book_that_timed_out_but_landed_is_found_by_re_reading_and_not_sent_again(ehr, start_call, faulty_adapter):
+async def test_a_book_that_timed_out_but_landed_is_found_by_re_reading_and_not_sent_again(
+    ehr, start_call, faulty_adapter
+):
     faulty_adapter.inject("timeout", into=BOOK)
     async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
         await call.say("Yes.")
@@ -139,7 +143,8 @@ async def test_a_book_the_ehr_applies_after_the_agent_stopped_waiting_is_never_r
     faulty_adapter.inject("server_error", into=BOOK)
     async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
         reply = await call.say("Yes.")
-        # The adapter gave up on the stalled Book before the agent said anything, so by now it has had its chance to land.
+        # The adapter gave up on the stalled Book before the agent said anything, so by now it has had its chance to
+        # land.
         await asyncio.sleep(STALLED_WRITE_LANDS_AFTER_SECS + 2)
 
         assert "wasn't able to book" in reply
@@ -236,7 +241,8 @@ async def test_a_cancel_the_ehr_applies_after_the_agent_stopped_waiting_is_never
     faulty_adapter.inject("server_error", into=CANCEL)
     async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):
         reply = await call.say("Yes.")
-        # The adapter gave up on the stalled Cancel before the agent said anything, so by now it has had its chance to land.
+        # The adapter gave up on the stalled Cancel before the agent said anything, so by now it has had its chance to
+        # land.
         await asyncio.sleep(STALLED_WRITE_LANDS_AFTER_SECS + 2)
 
         assert "wasn't able to cancel" in reply
@@ -287,7 +293,11 @@ async def at_reschedule_read_back(ehr, start_call, adapter_url):
         adapter_url=adapter_url,
     ) as call:
         await call.converse(
-            ["I need to move my appointment to any time with Dr. Faraday.", f"Rosalind Okonkwo, {spoken(born)}.", "10 AM."]
+            [
+                "I need to move my appointment to any time with Dr. Faraday.",
+                f"Rosalind Okonkwo, {spoken(born)}.",
+                "10 AM.",
+            ]
         )
         assert call.state == "reschedule_read_back"
         yield call, appointment_id, old_slot, new_slot
@@ -297,7 +307,12 @@ async def test_a_half_applied_reschedule_is_found_unfinished_by_re_reading_and_t
     ehr, start_call, faulty_adapter
 ):
     faulty_adapter.inject("half_write", into=RESCHEDULE)
-    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, old_slot, new_slot):
+    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (
+        call,
+        appointment_id,
+        old_slot,
+        new_slot,
+    ):
         await call.say("Yes.")
 
         assert faulty_adapter.sent(RESCHEDULE) == 2
@@ -312,7 +327,12 @@ async def test_a_reschedule_half_applied_twice_frees_the_new_slot_and_leaves_the
     ehr, start_call, faulty_adapter
 ):
     faulty_adapter.inject("half_write", into=RESCHEDULE, times=2)
-    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, old_slot, new_slot):
+    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (
+        call,
+        appointment_id,
+        old_slot,
+        new_slot,
+    ):
         reply = await call.say("Yes.")
 
         assert ehr.appointment(appointment_id)["slot"] == [{"reference": f"Slot/{old_slot}"}]
@@ -329,7 +349,12 @@ async def test_a_reschedule_that_timed_out_but_landed_is_found_by_re_reading_and
     ehr, start_call, faulty_adapter
 ):
     faulty_adapter.inject("timeout", into=RESCHEDULE)
-    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, old_slot, new_slot):
+    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (
+        call,
+        appointment_id,
+        old_slot,
+        new_slot,
+    ):
         await call.say("Yes.")
 
         assert faulty_adapter.sent(RESCHEDULE) == 1
@@ -342,7 +367,12 @@ async def test_a_reschedule_that_fails_twice_hands_off_and_leaves_the_appointmen
     ehr, start_call, faulty_adapter
 ):
     faulty_adapter.inject("server_error", into=RESCHEDULE, times=2)
-    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, old_slot, new_slot):
+    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (
+        call,
+        appointment_id,
+        old_slot,
+        new_slot,
+    ):
         reply = await call.say("Yes.")
 
         assert ehr.appointment(appointment_id)["slot"] == [{"reference": f"Slot/{old_slot}"}]
@@ -358,7 +388,12 @@ async def test_a_new_time_taken_just_before_the_reschedule_is_explained_and_othe
     ehr, start_call, faulty_adapter
 ):
     faulty_adapter.inject("slot_taken", into=RESCHEDULE)
-    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, old_slot, new_slot):
+    async with at_reschedule_read_back(ehr, start_call, faulty_adapter.url) as (
+        call,
+        appointment_id,
+        old_slot,
+        new_slot,
+    ):
         reply = await call.say("Yes.")
 
         [rejected] = call.tool_results("reschedule_appointment")

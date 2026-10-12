@@ -130,7 +130,8 @@ async def test_a_verified_patient_booking_and_asking_for_a_callback_leaves_no_pa
                 f"Hi, this is {patient.given} {patient.family}. I'd like to book an appointment.",
                 f"{spoken(patient.born)}. My number is {patient.spoken_number}.",
                 f"{faraday.name}, tomorrow please.",
-                f"Nine, for my annual physical. That's for {patient.given} {patient.family}, born {spoken(patient.born)}.",
+                f"Nine, for my annual physical. That's for {patient.given} {patient.family}, "
+                f"born {spoken(patient.born)}.",
                 "Yes.",
                 f"Could someone call me back at {patient.phone} about something else?",
             ]

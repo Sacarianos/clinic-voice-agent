@@ -59,7 +59,9 @@ def _with_attributes(span: dict) -> dict:
     for attribute in span["attributes"]:
         value = attribute["value"]
         attributes[attribute["key"]] = (
-            [item["stringValue"] for item in value["arrayValue"]["values"]] if "arrayValue" in value else value["stringValue"]
+            [item["stringValue"] for item in value["arrayValue"]["values"]]
+            if "arrayValue" in value
+            else value["stringValue"]
         )
     return {**span, "attributes": attributes}
 
@@ -102,7 +104,10 @@ async def test_one_command_runs_each_scenario_three_times_and_pushes_scores_tagg
     assert [len(run["turn_secs"]) for run in runs] == [1, 1, 1]
     assert runs[0]["tool_calls"][0]["duration_secs"] > 0
     assert runs[0]["usage"] == {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0}
-    assert runs[0]["transcript"][-1] ==["agent", "Of course. I'll have a member of our staff call you back at this number. Goodbye."]
+    assert runs[0]["transcript"][-1] == [
+        "agent",
+        "Of course. I'll have a member of our staff call you back at this number. Goodbye.",
+    ]
 
 
 async def test_a_failed_grade_goes_to_langfuse_with_its_reason(ehr_urls, tmp_path):
@@ -218,7 +223,9 @@ async def test_a_surname_the_noise_injector_garbled_is_masked_in_reasons_too(ehr
         repeats=1,
         ehr_urls=ehr_urls,
         agent=lambda seeded: ScriptedLLM(["Thanks Marguerite Vianuevo, I'll transfer you now.", "Goodbye."]),
-        caller=lambda scenario, seeded: NoisyCaller(ScriptedCaller(["Marguerite Villanueva, a person please."]), garble),
+        caller=lambda scenario, seeded: NoisyCaller(
+            ScriptedCaller(["Marguerite Villanueva, a person please."]), garble
+        ),
         langfuse=langfuse.client(),
         results_dir=tmp_path,
     )

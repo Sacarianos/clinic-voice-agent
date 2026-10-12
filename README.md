@@ -44,6 +44,20 @@ cd fhir
 FHIR_BASE_URL=http://localhost:8080/fhir uv run pytest
 ```
 
+## Lint and rule checks
+
+```
+scripts/lint
+```
+
+It needs uv and nothing else, no Docker and no stack, and runs in a few seconds after the first install. It prints one line per step and exits non-zero when any step failed. CI runs it as its own job next to `scripts/verify`.
+
+- `scripts/lint ruff`: `ruff check` and `ruff format --check` on `agent/`, `evals/`, `fhir/` and `scripts/`, with the rules in `ruff.toml` (E, F, I, B, UP, line length 120). To repair what it reports, run `uv run --project agent ruff format agent evals fhir scripts` and the same with `check --fix`.
+- `scripts/lint pyright`: pyright in basic mode on `agent/` and `evals/`, each against its own environment. A third-party stub gap gets a one-line `# pyright: ignore[rule]` with a reason beside it.
+- `scripts/lint rules`: `scripts/check_rules.py`. It fails on a `register_function` call under `agent/src`, because a handler added that way runs in every node and bypasses tool gating ([ADR 0003](docs/adr/0003-safety-rules-live-in-the-state-machine.md)), and on an em or en dash in a Markdown file, a code comment or a Python docstring. Its `--self-check` feeds every rule a bad and a good input and runs first.
+
+`.pre-commit-config.yaml` runs the same steps as hooks, and a `commit-msg` hook rejects a `Co-Authored-By` trailer that names an AI. Install them once per clone with `uvx pre-commit install`.
+
 ## EHR adapter
 
 The agent never talks to FHIR. It calls the adapter in `adapter/`, a small Hono service on `http://localhost:3000` that answers in plain domain shapes. Set `ADAPTER_PORT` when 3000 is taken. See [ADR 0001](docs/adr/0001-ehr-adapter-is-a-separate-typescript-service.md).

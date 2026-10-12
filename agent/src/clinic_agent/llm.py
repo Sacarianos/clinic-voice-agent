@@ -59,16 +59,17 @@ LLM_CONFIGS = {
 }
 
 
-def create_llm(env: Mapping[str, str], *, system_instruction: str) -> LLMService:
+def create_llm(env: Mapping[str, str], *, system_instruction: str) -> LLMService[Any]:
     name = env.get("LLM_CONFIG") or DEFAULT_LLM_CONFIG
     config = LLM_CONFIGS.get(name)
     if config is None:
         known = ", ".join(sorted(LLM_CONFIGS))
         raise ConfigError(f"Unknown LLM_CONFIG {name!r}. Known configs: {known}")
     api_key = require(env, config.api_key_env, f"LLM config {name!r}")
+    # config.service and its Settings class are always the same pair, which the union type cannot say.
     return config.service(
         api_key=api_key,
-        settings=config.service.Settings(
+        settings=config.service.Settings(  # pyright: ignore[reportArgumentType]
             model=config.model, system_instruction=system_instruction, **config.settings
         ),
         run_in_parallel=RUN_TOOLS_IN_PARALLEL,

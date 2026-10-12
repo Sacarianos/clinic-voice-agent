@@ -82,7 +82,10 @@ def load_scenario(path: Path) -> Scenario:
 
 
 def _parse(name: str, data: dict) -> Scenario:
-    slots = {label: SlotSpec(int(spec["weekday"]), time.fromisoformat(spec["at"])) for label, spec in (data.get("slots") or {}).items()}
+    slots = {
+        label: SlotSpec(int(spec["weekday"]), time.fromisoformat(spec["at"]))
+        for label, spec in (data.get("slots") or {}).items()
+    }
     appointments = {
         label: AppointmentSpec(_slot(spec["slot"], slots), _visit_type(spec["visit_type"]))
         for label, spec in (data.get("appointments") or {}).items()

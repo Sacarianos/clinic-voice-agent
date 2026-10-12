@@ -48,12 +48,19 @@ class MessagesStandIn:
                 "content": [{"type": "text", "text": text}],
                 "stop_reason": "end_turn",
                 "stop_sequence": None,
-                "usage": {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 3, "cache_creation_input_tokens": 2},
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "cache_read_input_tokens": 3,
+                    "cache_creation_input_tokens": 2,
+                },
             },
         )
 
     def client(self) -> AsyncAnthropic:
-        return AsyncAnthropic(api_key="test", http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(self.handle)))
+        return AsyncAnthropic(
+            api_key="test", http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(self.handle))
+        )
 
 
 def test_the_wrong_birth_date_is_the_real_one_in_the_wrong_year(tmp_path):

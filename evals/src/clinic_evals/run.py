@@ -1,4 +1,7 @@
-"""One eval run: seed the scenario's records, let the Caller talk to the agent through the text transport, read the EHR, clean up."""
+"""One eval run.
+
+Seed the scenario's records, let the Caller talk to the agent through the text transport, read the EHR, clean up.
+"""
 
 import asyncio
 import time

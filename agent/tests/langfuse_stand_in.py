@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from opentelemetry import trace
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from opentelemetry.sdk.trace import TracerProvider
 
 
 class FakeLangfuse:
@@ -42,7 +43,9 @@ class FakeLangfuse:
         """A span is exported only once it ends, and the conversation ends after the hang-up is processed."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            trace.get_tracer_provider().force_flush()
+            provider = trace.get_tracer_provider()
+            assert isinstance(provider, TracerProvider)  # configure_tracing installed the SDK's
+            provider.force_flush()
             matching = [
                 span
                 for span in self.spans()

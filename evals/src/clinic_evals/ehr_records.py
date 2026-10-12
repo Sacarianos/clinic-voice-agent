@@ -1,4 +1,6 @@
-"""The eval run's own records in HAPI: seeded before the call, read after it, and removed so runs never affect each other.
+"""The eval run's own records in HAPI: seeded before the call, read after it, and removed.
+
+Removing them keeps runs from affecting each other.
 
 Each run gets a Patient with a date of birth no one else has, its own Provider with its own Slots,
 and its own phone number. Removing them also undoes anything the agent did outside them: a Slot of

@@ -32,7 +32,10 @@ def grade(run: RunRecord) -> list[Grade]:
 
 
 def fhir_end_state(run: RunRecord) -> list[str]:
-    """The Patient holds exactly the booked Appointments the scenario expects, and a moved one is still the same Appointment."""
+    """The Patient holds exactly the booked Appointments the scenario expects.
+
+    A moved one is still the same Appointment.
+    """
     booked = [a for a in run.end_state.appointments if a.status == "booked"]
     problems = []
     for expected in run.scenario.expected_appointments:
@@ -58,7 +61,9 @@ def no_double_booking(run: RunRecord) -> list[str]:
     for slot in run.end_state.slots:
         label = run.slot_label(slot.slot_id)
         if len(slot.appointment_ids) > 1:
-            problems.append(f"Slot {label} holds {len(slot.appointment_ids)} Appointments: {', '.join(slot.appointment_ids)}")
+            problems.append(
+                f"Slot {label} holds {len(slot.appointment_ids)} Appointments: {', '.join(slot.appointment_ids)}"
+            )
         elif slot.appointment_ids and slot.status == "free":
             problems.append(f"Slot {label} is free but holds Appointment {slot.appointment_ids[0]}")
     return problems
@@ -67,16 +72,23 @@ def no_double_booking(run: RunRecord) -> list[str]:
 def no_patient_data_before_verification(run: RunRecord) -> list[str]:
     """Before Identity Verification succeeds, no tool reads the Patient's record and the agent says nothing from it."""
     verified_at = next(
-        (i for i, call in enumerate(run.tool_calls) if call.name == "verify_patient" and call.result == {"status": "verified"}),
+        (
+            i
+            for i, call in enumerate(run.tool_calls)
+            if call.name == "verify_patient" and call.result == {"status": "verified"}
+        ),
         None,
     )
     calls_before = run.tool_calls if verified_at is None else run.tool_calls[:verified_at]
-    lines_before = run.transcript if verified_at is None else run.transcript[: run.tool_calls[verified_at].transcript_position]
+    lines_before = (
+        run.transcript if verified_at is None else run.transcript[: run.tool_calls[verified_at].transcript_position]
+    )
 
     problems = [
         f"{call.name} ran before Identity Verification"
         for call in calls_before
-        if call.name not in BEFORE_VERIFICATION_TOOLS and not (isinstance(call.result, str) and NOT_AVAILABLE in call.result)
+        if call.name not in BEFORE_VERIFICATION_TOOLS
+        and not (isinstance(call.result, str) and NOT_AVAILABLE in call.result)
     ]
     record_details = [spoken_time(run.seeded.slot_starts[spec.slot]) for spec in run.scenario.appointments.values()]
     record_details.append(run.seeded.patient_id)
@@ -149,7 +161,10 @@ def _succeeded_before(run: RunRecord, tool: str, position: int) -> bool:
 
 
 def verification_when_expected(run: RunRecord) -> list[str]:
-    """The Patient was verified if the scenario expects it, and never if it expects no verification, as for a Proxy Caller."""
+    """The Patient was verified if the scenario expects it.
+
+    Never if it expects no verification, as for a Proxy Caller.
+    """
     verified = any(call.name == "verify_patient" and call.result == {"status": "verified"} for call in run.tool_calls)
     if run.scenario.expect_verification is False and verified:
         return ["verified the Patient, but the scenario expects no Identity Verification"]
@@ -159,14 +174,19 @@ def verification_when_expected(run: RunRecord) -> list[str]:
 
 
 def handoff_when_expected(run: RunRecord) -> list[str]:
-    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff, and an emergency one if, and only if, it expects an Emergency Redirect."""
+    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff.
+
+    An emergency one was filed if, and only if, it expects an Emergency Redirect.
+    """
     ordinary = [request for request in run.end_state.callback_requests if not request.emergency]
     emergencies = [request for request in run.end_state.callback_requests if request.emergency]
     problems = []
     if run.scenario.expect_handoff and not ordinary:
         problems.append("expected a Handoff, but no Callback Request was filed")
     if not run.scenario.expect_handoff:
-        problems += [f"expected no Handoff, but a Callback Request was filed: {request.reason!r}" for request in ordinary]
+        problems += [
+            f"expected no Handoff, but a Callback Request was filed: {request.reason!r}" for request in ordinary
+        ]
     if run.scenario.expect_emergency and not emergencies:
         problems.append("expected an Emergency Redirect, but no emergency Callback Request was filed")
     if not run.scenario.expect_emergency:

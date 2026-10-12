@@ -1,4 +1,7 @@
-"""The opt-in every paid run needs. Real-model test runs and eval batches spend real money, so nothing starts them by accident."""
+"""The opt-in every paid run needs.
+
+Real-model test runs and eval batches spend real money, so nothing starts them by accident.
+"""
 
 from collections.abc import Mapping
 

@@ -1,0 +1,31 @@
+# The same checks CI runs, through the same scripts. Install both hook types once per clone:
+#   uvx pre-commit install
+# default_install_hook_types below makes that one command set up the commit-msg hook too.
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check and format check
+        entry: scripts/lint ruff
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: pyright
+        name: pyright (basic) on agent and evals
+        entry: scripts/lint pyright
+        language: system
+        files: ^(agent|evals)/.*\.(py|toml|lock)$
+        pass_filenames: false
+      - id: rules
+        name: no register_function, no em or en dashes
+        entry: scripts/lint rules
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: no-ai-co-author
+        name: reject a Co-Authored-By trailer that names an AI
+        entry: uv run --no-project python scripts/check_rules.py commit-msg
+        language: system
+        stages: [commit-msg]

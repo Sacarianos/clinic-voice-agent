@@ -149,9 +149,7 @@ async def test_a_spelled_surname_that_still_matches_two_patients_ends_the_call_w
 async def test_a_verification_that_does_not_say_whose_details_they_are_verifies_nobody(ehr, start_call):
     born = ehr.unused_birth_date()
     ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
-    undeclared = CallTool(
-        "verify_patient", {"given_name": "Rosalind", "family_name": "Okonkwo", "date_of_birth": born}
-    )
+    undeclared = CallTool("verify_patient", {"given_name": "Rosalind", "family_name": "Okonkwo", "date_of_birth": born})
 
     async with start_call(
         ["Sure. What is your full name and date of birth?", undeclared, "Are those your own details?"]

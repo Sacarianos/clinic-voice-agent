@@ -145,13 +145,18 @@ class _Appointments:
                 )
 
             write = Write(
-                "cancel", patient_id, idempotency_key, appointment_id=appointment.appointment_id, slot_id=appointment.slot_id
+                "cancel",
+                patient_id,
+                idempotency_key,
+                appointment_id=appointment.appointment_id,
+                slot_id=appointment.slot_id,
             )
             written = await write_until_settled(self.ehr.audit_log, write, cancel, is_cancelled, release)
             if written.outcome == "succeeded":
                 cancelled = f"Your {_details(appointment)} is cancelled. {ANYTHING_ELSE}"
                 return {"outcome": "succeeded"}, self.exits.back_to_intent(cancelled)
             if written.outcome == "rejected":
+                assert written.reason is not None
                 result = {"outcome": "rejected", "reason": written.reason}
                 return result, self.exits.back_to_intent(CHANGE_REJECTED[written.reason])
             reason = unsettled(written, verb="cancel", done="cancelled", details=_details(appointment))
@@ -208,7 +213,10 @@ class _Rescheduling:
 
             async def reschedule() -> WriteOutcome:
                 return await self.ehr.reschedule(
-                    patient_id=patient_id, appointment_id=appointment_id, slot_id=slot.slot_id, idempotency_key=idempotency_key
+                    patient_id=patient_id,
+                    appointment_id=appointment_id,
+                    slot_id=slot.slot_id,
+                    idempotency_key=idempotency_key,
                 )
 
             async def is_moved() -> bool:
@@ -218,7 +226,9 @@ class _Rescheduling:
             async def release() -> WriteOutcome:
                 return await self.ehr.release_slot(slot_id=slot.slot_id, idempotency_key=idempotency_key)
 
-            write = Write("reschedule", patient_id, idempotency_key, appointment_id=appointment_id, slot_id=slot.slot_id)
+            write = Write(
+                "reschedule", patient_id, idempotency_key, appointment_id=appointment_id, slot_id=slot.slot_id
+            )
             written = await write_until_settled(self.ehr.audit_log, write, reschedule, is_moved, release)
             if written.outcome == "succeeded":
                 moved = (

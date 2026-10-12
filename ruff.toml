@@ -1,0 +1,8 @@
+# One config for agent/, evals/ and fhir/. `scripts/lint` runs it.
+target-version = "py312"
+line-length = 120
+src = ["agent/src", "agent", "evals/src", "evals", "fhir/src", "fhir"]
+extend-exclude = ["fhir/output"]
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]

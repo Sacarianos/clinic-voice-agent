@@ -1,4 +1,7 @@
-"""An eval batch: every scenario, several times over, for one LLM config. Graded, saved locally and pushed to Langfuse."""
+"""An eval batch: every scenario, several times over, for one LLM config.
+
+Graded, saved locally and pushed to Langfuse.
+"""
 
 import json
 import sys
@@ -65,7 +68,9 @@ async def run_evals(
             record = await run_scenario(
                 scenario, *ehr_urls, agent=agent, caller=caller, reply_timeout_secs=reply_timeout_secs
             )
-            result = RunResult(batch_id, scenario.name, repeat, record, _masked(grade(record), record), started, datetime.now(UTC))
+            result = RunResult(
+                batch_id, scenario.name, repeat, record, _masked(grade(record), record), started, datetime.now(UTC)
+            )
             results.append(result)
             print(_run_line(result), flush=True)
             _save(results, config, noise_rate, results_dir / f"{batch_id}.json")
@@ -83,7 +88,9 @@ async def run_evals(
 
 
 def _masked(grades: list[Grade], record: RunRecord) -> list[Grade]:
-    """Grade reasons quote what the agent said, so they go through the agent's PHI mask before anything stores, prints or pushes them.
+    """Grade reasons quote what the agent said, so they go through the agent's PHI mask.
+
+    That happens before anything stores, prints or pushes them.
 
     The mask already learns what the Caller says on the call. It is also taught what the run seeded, and the
     surnames the noise injector garbled, so a name the agent repeats is masked even when the Caller never said it.
@@ -136,7 +143,13 @@ def batch_document(results: list[RunResult], config: str, noise_rate: float) -> 
             "usage": asdict(r.record.usage),
             "caller_usage": asdict(r.record.caller_usage),
             "noise": [
-                {"turn": n.turn, "category": n.confusion.category, "said": n.confusion.said, "heard": n.confusion.heard, "source": n.confusion.source}
+                {
+                    "turn": n.turn,
+                    "category": n.confusion.category,
+                    "said": n.confusion.said,
+                    "heard": n.confusion.heard,
+                    "source": n.confusion.source,
+                }
                 for n in r.record.noise
             ],
             "transcript": r.record.transcript,

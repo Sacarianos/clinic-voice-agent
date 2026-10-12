@@ -2,10 +2,9 @@ import pytest
 from pipecat.adapters.schemas.direct_function import tool_options
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
+from pipecat.processors.aggregators.llm_context import NOT_GIVEN, LLMContext, NotGiven
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
-
-from pipecat.processors.aggregators.llm_context import NOT_GIVEN, LLMContext
 
 from clinic_agent.config import ConfigError
 from clinic_agent.llm import create_llm
@@ -13,7 +12,7 @@ from clinic_agent.llm import create_llm
 PROMPT = "You are the clinic receptionist."
 
 
-async def request_sent_to_anthropic(llm, tools: ToolsSchema = NOT_GIVEN) -> dict:
+async def request_sent_to_anthropic(llm, tools: ToolsSchema | NotGiven = NOT_GIVEN) -> dict:
     """Runs one turn against a stand-in for Anthropic and returns the request pipecat built."""
     sent = {}
     context = LLMContext(messages=[{"role": "user", "content": "Hello"}], tools=tools)
@@ -39,7 +38,7 @@ def test_claude_haiku_5_5_is_the_default_llm():
 
     assert isinstance(llm, AnthropicLLMService)
     assert llm.settings.model == "claude-haiku-5-5"
-    assert llm.settings.system_instruction == PROMPT
+    assert llm.settings.system_instruction == PROMPT  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_haiku_4_5_stays_reachable_as_its_own_config():
@@ -49,7 +48,7 @@ def test_haiku_4_5_stays_reachable_as_its_own_config():
 
     assert isinstance(llm, AnthropicLLMService)
     assert llm.settings.model == "claude-haiku-4-5"
-    assert llm.settings.system_instruction == PROMPT
+    assert llm.settings.system_instruction == PROMPT  # pyright: ignore[reportAttributeAccessIssue]
 
 
 async def test_haiku_5_5_turns_thinking_off_in_the_request_it_sends():
@@ -102,7 +101,7 @@ def test_gemini_config_uses_gemini_3_6_flash_through_openrouter():
 
     assert isinstance(llm, OpenRouterLLMService)
     assert llm.settings.model == "google/gemini-3.6-flash"
-    assert llm.settings.system_instruction == PROMPT
+    assert llm.settings.system_instruction == PROMPT  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_unknown_llm_config_names_the_known_ones():

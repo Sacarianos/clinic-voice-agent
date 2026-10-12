@@ -35,7 +35,7 @@ DEFAULT_NOISE_RATE = 0.2
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="clinic-evals", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="clinic-evals", description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--config", choices=sorted(LLM_CONFIGS), help="the LLM config the agent runs")
     parser.add_argument("--report", action="store_true", help="print the latest saved batch of each config and exit")
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR, help="where batches are saved and read from")
@@ -43,14 +43,20 @@ def main(argv: list[str] | None = None) -> int:
         "--noise-rate",
         type=float,
         default=DEFAULT_NOISE_RATE,
-        help=f"share of confusable words in the Caller's lines that STT-style noise garbles (default {DEFAULT_NOISE_RATE}, 0 for none)",
+        help=(
+            "share of confusable words in the Caller's lines that STT-style noise garbles "
+            f"(default {DEFAULT_NOISE_RATE}, 0 for none)"
+        ),
     )
     parser.add_argument("--repeats", type=int, default=3, help="runs per scenario (default 3)")
     parser.add_argument("--scenario", action="append", help="run only this scenario; repeat to pick several")
     parser.add_argument(
         "--max-dollars",
         type=float,
-        help="stop the batch once the agent's and the simulated Caller's cost so far reaches this; the runs so far are saved",
+        help=(
+            "stop the batch once the agent's and the simulated Caller's cost so far reaches this; "
+            "the runs so far are saved"
+        ),
     )
     args = parser.parse_args(argv)
     if args.report:
@@ -74,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.scenario:
         unknown = set(args.scenario) - {s.name for s in scenarios}
         if unknown:
-            parser.error(f"unknown scenario {', '.join(sorted(unknown))}; known: {', '.join(s.name for s in scenarios)}")
+            parser.error(
+                f"unknown scenario {', '.join(sorted(unknown))}; known: {', '.join(s.name for s in scenarios)}"
+            )
         scenarios = [s for s in scenarios if s.name in args.scenario]
 
     runs = len(scenarios) * args.repeats
@@ -89,7 +97,9 @@ def main(argv: list[str] | None = None) -> int:
     except PaidCallsNotAllowed as refusal:
         print(refusal, file=sys.stderr)
         return 2
-    limit = f", stopping at ${args.max_dollars:.2f}" if args.max_dollars is not None else ", with no --max-dollars limit"
+    limit = (
+        f", stopping at ${args.max_dollars:.2f}" if args.max_dollars is not None else ", with no --max-dollars limit"
+    )
     print(f"Estimated cost: {estimated} for {runs} runs of {args.config}{limit}.", flush=True)
 
     noise = NoiseInjector(load_confusions(), rate=args.noise_rate)
@@ -101,7 +111,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(error))
     langfuse = Langfuse.from_env(env)
     if langfuse is None:
-        print("LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not set: scores are saved locally only.", file=sys.stderr)
+        print(
+            "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not set: scores are saved locally only.", file=sys.stderr
+        )
 
     results = asyncio.run(
         run_evals(

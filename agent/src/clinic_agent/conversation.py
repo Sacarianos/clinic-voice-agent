@@ -5,7 +5,7 @@ own tools, so nothing past Identity Verification can be reached before it succee
 tool on the LLM directly: a handler registered that way runs whatever the current node offers.
 """
 
-from pipecat.flows import FlowManager, FlowsFunctionSchema, NodeConfig
+from pipecat.flows import FlowManager, FlowsDirectFunction, FlowsFunctionSchema, NodeConfig
 
 from clinic_agent.appointments import list_appointments_tool
 from clinic_agent.booking import Exits, find_slots_tool
@@ -40,22 +40,20 @@ A clinical question asks for medical advice: what a symptom means, what to take 
 results, or how to treat something. A caller who feels unwell and wants to be seen is not asking that.
 They want an appointment, usually a sick visit, and you help them book it.
 For questions about the clinic itself, call get_clinic_info and answer from what it returns.
-"""
+"""  # noqa: E501
 
 GREETING = f"Thank you for calling {CLINIC_NAME}. How can I help you today?"
 
 # The same words whatever didn't match, so the line can't be used to learn who is a Patient here.
 VERIFICATION_FAILED = (
-    "I'm sorry, I couldn't verify those details. "
-    "Could you tell me your full name and date of birth one more time?"
+    "I'm sorry, I couldn't verify those details. Could you tell me your full name and date of birth one more time?"
 )
 
 # Several Patients matched. Spelling settles it, and it doesn't count as a failed attempt.
 SPELL_LAST_NAME = "Thanks. To be sure I find the right record, could you spell your last name for me?"
 
 HANDOFF_AFTER_FAILED_VERIFICATION = (
-    "I'm sorry, I wasn't able to verify your identity. "
-    "A member of our staff will call you back to help. Goodbye."
+    "I'm sorry, I wasn't able to verify your identity. A member of our staff will call you back to help. Goodbye."
 )
 
 MAX_FAILED_VERIFICATIONS = 2
@@ -202,7 +200,10 @@ async def _intent_node(ehr: EhrAdapter) -> NodeConfig:
         }
 
     exits = Exits(back_to_intent=back_to_intent)
-    functions = [find_slots_tool(ehr, providers, exits), list_appointments_tool(ehr, providers, exits)]
+    functions: list[FlowsFunctionSchema | FlowsDirectFunction] = [
+        find_slots_tool(ehr, providers, exits),
+        list_appointments_tool(ehr, providers, exits),
+    ]
     return {
         "name": "intent",
         "task_messages": [{"role": "developer", "content": INTENT_TASK}],

@@ -100,6 +100,7 @@ expect:
     scenario = load_scenario(path)
 
     assert scenario.name == "move_it"
+    assert scenario.provider is not None
     assert scenario.provider.family == "Faraday"
     assert scenario.slots["later"].weekday == 2
     assert scenario.slots["later"].at.isoformat() == "14:30:00"

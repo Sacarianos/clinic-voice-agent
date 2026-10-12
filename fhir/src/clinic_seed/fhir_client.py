@@ -44,7 +44,14 @@ class FhirClient:
         """
         for start in range(0, len(resources), chunk_size):
             entries = [
-                {"resource": resource, "request": {"method": "POST", "url": resource["resourceType"], "ifNoneExist": f"identifier={token}"}}
+                {
+                    "resource": resource,
+                    "request": {
+                        "method": "POST",
+                        "url": resource["resourceType"],
+                        "ifNoneExist": f"identifier={token}",
+                    },
+                }
                 for resource, token in resources[start : start + chunk_size]
             ]
             result = self._request("POST", "", {"resourceType": "Bundle", "type": "transaction", "entry": entries})
