@@ -74,7 +74,10 @@ def create_app(
     hang_up_through_twilio: bool = True,
     tracing: bool = False,
 ) -> FastAPI:
-    """Browser calls are always on. Phone calls come in only with a Twilio account to check their webhooks and hang them up."""
+    """Browser calls are always on.
+
+    Phone calls come in only with a Twilio account to check their webhooks and hang them up.
+    """
     webrtc = SmallWebRTCRequestHandler()
 
     @asynccontextmanager

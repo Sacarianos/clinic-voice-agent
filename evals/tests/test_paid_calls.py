@@ -111,9 +111,9 @@ def handoff_agent(usage: LLMTokenUsage | None = None):
 async def test_a_batch_stops_when_the_callers_spending_reaches_the_limit_and_saves_what_ran(ehr_urls, tmp_path, capsys):
     scenario = load_scenario(SCENARIOS_DIR / "asks_for_a_person.yaml")
     # Claude Haiku 4.5 plays the Caller at $1 per million input tokens: one million is $1 a run.
-    caller = lambda scenario, seeded: CallerThatSpends(
-        ["Can I talk to a real person, please?"], TokenUsage(input_tokens=1_000_000)
-    )
+
+    def caller(scenario, seeded):
+        return CallerThatSpends(["Can I talk to a real person, please?"], TokenUsage(input_tokens=1_000_000))
 
     results = await run_evals(
         [scenario],

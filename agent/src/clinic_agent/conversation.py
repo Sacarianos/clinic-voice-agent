@@ -40,7 +40,7 @@ A clinical question asks for medical advice: what a symptom means, what to take 
 results, or how to treat something. A caller who feels unwell and wants to be seen is not asking that.
 They want an appointment, usually a sick visit, and you help them book it.
 For questions about the clinic itself, call get_clinic_info and answer from what it returns.
-"""
+"""  # noqa: E501
 
 GREETING = f"Thank you for calling {CLINIC_NAME}. How can I help you today?"
 

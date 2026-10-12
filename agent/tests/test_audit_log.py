@@ -43,7 +43,10 @@ def is_uuid(value) -> bool:
 
 @asynccontextmanager
 async def booking(ehr, start_call, adapter_url):
-    """A Verified Patient's call, stopped at the Read-back of a Book. Yields (call, patient_id, slot_id, caller lines)."""
+    """A Verified Patient's call, stopped at the Read-back of a Book.
+
+    Yields (call, patient_id, slot_id, caller lines).
+    """
     born = ehr.unused_birth_date()
     patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
     faraday = ehr.create_provider(given="Imogen", family="Faraday")

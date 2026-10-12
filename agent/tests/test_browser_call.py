@@ -1,4 +1,7 @@
-"""Browser calls: Pipecat's prebuilt page talks to the agent over WebRTC, through the same pipeline and flow as a phone call."""
+"""Browser calls: Pipecat's prebuilt page talks to the agent over WebRTC.
+
+It goes through the same pipeline and flow as a phone call.
+"""
 
 import asyncio
 import random

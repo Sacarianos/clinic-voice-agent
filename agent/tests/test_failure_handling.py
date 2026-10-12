@@ -143,7 +143,8 @@ async def test_a_book_the_ehr_applies_after_the_agent_stopped_waiting_is_never_r
     faulty_adapter.inject("server_error", into=BOOK)
     async with at_booking_read_back(ehr, start_call, faulty_adapter.url) as (call, patient_id, slot_id):
         reply = await call.say("Yes.")
-        # The adapter gave up on the stalled Book before the agent said anything, so by now it has had its chance to land.
+        # The adapter gave up on the stalled Book before the agent said anything, so by now it has had its chance to
+        # land.
         await asyncio.sleep(STALLED_WRITE_LANDS_AFTER_SECS + 2)
 
         assert "wasn't able to book" in reply
@@ -240,7 +241,8 @@ async def test_a_cancel_the_ehr_applies_after_the_agent_stopped_waiting_is_never
     faulty_adapter.inject("server_error", into=CANCEL)
     async with at_cancel_read_back(ehr, start_call, faulty_adapter.url) as (call, appointment_id, slot_id):
         reply = await call.say("Yes.")
-        # The adapter gave up on the stalled Cancel before the agent said anything, so by now it has had its chance to land.
+        # The adapter gave up on the stalled Cancel before the agent said anything, so by now it has had its chance to
+        # land.
         await asyncio.sleep(STALLED_WRITE_LANDS_AFTER_SECS + 2)
 
         assert "wasn't able to cancel" in reply

@@ -1,4 +1,7 @@
-"""An eval batch: every scenario, several times over, for one LLM config. Graded, saved locally and pushed to Langfuse."""
+"""An eval batch: every scenario, several times over, for one LLM config.
+
+Graded, saved locally and pushed to Langfuse.
+"""
 
 import json
 import sys
@@ -85,7 +88,9 @@ async def run_evals(
 
 
 def _masked(grades: list[Grade], record: RunRecord) -> list[Grade]:
-    """Grade reasons quote what the agent said, so they go through the agent's PHI mask before anything stores, prints or pushes them.
+    """Grade reasons quote what the agent said, so they go through the agent's PHI mask.
+
+    That happens before anything stores, prints or pushes them.
 
     The mask already learns what the Caller says on the call. It is also taught what the run seeded, and the
     surnames the noise injector garbled, so a name the agent repeats is masked even when the Caller never said it.

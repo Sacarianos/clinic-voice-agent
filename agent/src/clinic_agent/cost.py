@@ -60,7 +60,10 @@ def call_cost(model: str | None, usage: TokenUsage) -> float | None:
 
 
 def token_usage(llm: LLMService, reported: list[LLMTokenUsage]) -> TokenUsage:
-    """Adds up what the LLM reported. OpenAI-compatible services count cached input inside prompt_tokens, the rest outside it."""
+    """Adds up what the LLM reported.
+
+    OpenAI-compatible services count cached input inside prompt_tokens, the rest outside it.
+    """
     gross = isinstance(llm, OpenAILLMService)
     cache_read = sum(usage.cache_read_input_tokens or 0 for usage in reported)
     prompt = sum(usage.prompt_tokens for usage in reported)

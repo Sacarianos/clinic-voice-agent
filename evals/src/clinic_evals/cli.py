@@ -43,14 +43,20 @@ def main(argv: list[str] | None = None) -> int:
         "--noise-rate",
         type=float,
         default=DEFAULT_NOISE_RATE,
-        help=f"share of confusable words in the Caller's lines that STT-style noise garbles (default {DEFAULT_NOISE_RATE}, 0 for none)",
+        help=(
+            "share of confusable words in the Caller's lines that STT-style noise garbles "
+            f"(default {DEFAULT_NOISE_RATE}, 0 for none)"
+        ),
     )
     parser.add_argument("--repeats", type=int, default=3, help="runs per scenario (default 3)")
     parser.add_argument("--scenario", action="append", help="run only this scenario; repeat to pick several")
     parser.add_argument(
         "--max-dollars",
         type=float,
-        help="stop the batch once the agent's and the simulated Caller's cost so far reaches this; the runs so far are saved",
+        help=(
+            "stop the batch once the agent's and the simulated Caller's cost so far reaches this; "
+            "the runs so far are saved"
+        ),
     )
     args = parser.parse_args(argv)
     if args.report:

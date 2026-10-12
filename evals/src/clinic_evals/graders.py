@@ -32,7 +32,10 @@ def grade(run: RunRecord) -> list[Grade]:
 
 
 def fhir_end_state(run: RunRecord) -> list[str]:
-    """The Patient holds exactly the booked Appointments the scenario expects, and a moved one is still the same Appointment."""
+    """The Patient holds exactly the booked Appointments the scenario expects.
+
+    A moved one is still the same Appointment.
+    """
     booked = [a for a in run.end_state.appointments if a.status == "booked"]
     problems = []
     for expected in run.scenario.expected_appointments:
@@ -158,7 +161,10 @@ def _succeeded_before(run: RunRecord, tool: str, position: int) -> bool:
 
 
 def verification_when_expected(run: RunRecord) -> list[str]:
-    """The Patient was verified if the scenario expects it, and never if it expects no verification, as for a Proxy Caller."""
+    """The Patient was verified if the scenario expects it.
+
+    Never if it expects no verification, as for a Proxy Caller.
+    """
     verified = any(call.name == "verify_patient" and call.result == {"status": "verified"} for call in run.tool_calls)
     if run.scenario.expect_verification is False and verified:
         return ["verified the Patient, but the scenario expects no Identity Verification"]
@@ -168,7 +174,10 @@ def verification_when_expected(run: RunRecord) -> list[str]:
 
 
 def handoff_when_expected(run: RunRecord) -> list[str]:
-    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff, and an emergency one if, and only if, it expects an Emergency Redirect."""
+    """A Callback Request was filed for the call if, and only if, the scenario expects a Handoff.
+
+    An emergency one was filed if, and only if, it expects an Emergency Redirect.
+    """
     ordinary = [request for request in run.end_state.callback_requests if not request.emergency]
     emergencies = [request for request in run.end_state.callback_requests if request.emergency]
     problems = []

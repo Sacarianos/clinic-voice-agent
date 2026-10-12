@@ -49,7 +49,10 @@ class CallbackRequest:
 
 @dataclass(frozen=True)
 class EndState:
-    """The EHR after the call: the Patient's Appointments, every Slot they or the scenario touch, and the Callback Requests from the call's number."""
+    """The EHR after the call.
+
+    The Patient's Appointments, every Slot they or the scenario touch, and the Callback Requests from the call's number.
+    """
 
     appointments: list[AppointmentState]
     slots: list[SlotState]

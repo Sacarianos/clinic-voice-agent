@@ -196,7 +196,7 @@ async def test_a_no_to_the_cancel_read_back_goes_back_to_choosing_and_a_cancel_c
 
 
 @pytest.mark.scripted_only
-async def test_a_no_to_the_reschedule_read_back_goes_back_to_choosing_and_a_reschedule_called_at_the_read_back_is_refused(
+async def test_a_no_to_the_reschedule_read_back_goes_back_to_choosing_and_a_reschedule_called_at_the_read_back_is_refused(  # noqa: E501
     ehr, start_call
 ):
     born = ehr.unused_birth_date()

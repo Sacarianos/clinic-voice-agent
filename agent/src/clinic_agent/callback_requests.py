@@ -80,7 +80,8 @@ for a number where staff can reach them later. If they say one, call record_call
 digits at once, without reading it back. Otherwise tell them again to hang up and dial 911. Ask nothing else.
 """
 
-# Said only when the Callback Request could not be saved, so the Caller is never told a callback is coming when it isn't.
+# Said only when the Callback Request could not be saved, so the Caller is never told a callback is coming when it
+# isn't.
 COULD_NOT_FILE_CALLBACK_REQUEST = (
     "I'm sorry, I wasn't able to save your request. Please call us again in a few minutes. Goodbye."
 )
@@ -269,8 +270,9 @@ def _handoff_tool(ehr: EhrAdapter) -> FlowsFunctionSchema:
     return FlowsFunctionSchema(
         name="handoff",
         description=(
-            "End the call and have clinic staff call the caller back later. The clinic never transfers a call, so say nothing "
-            "before calling it: the tool tells the caller that staff will call them back. Use it when the caller asks for a person (a human, staff, the front desk), "
+            "End the call and have clinic staff call the caller back later. The clinic never transfers a call, "
+            "so say nothing before calling it: the tool tells the caller that staff will call them back. "
+            "Use it when the caller asks for a person (a human, staff, the front desk), "
             "is calling for someone else, is not a patient yet, or asks for medical advice "
             "(what a symptom means, medication, test results, treatment). Do not answer those yourself. "
             "Not for a caller who feels unwell and wants an appointment: help them book a sick visit instead."

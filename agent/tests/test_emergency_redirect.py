@@ -1,4 +1,7 @@
-"""Emergency Redirect: from any state the Caller is told to dial 911, the call ends and staff get an emergency Callback Request."""
+"""Emergency Redirect: from any state the Caller is told to dial 911.
+
+The call ends and staff get an emergency Callback Request.
+"""
 
 from scripts import emergency_redirect, spoken, verify
 
