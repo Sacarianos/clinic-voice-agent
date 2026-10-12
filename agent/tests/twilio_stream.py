@@ -46,4 +46,3 @@ def hang_up(twilio, app, seconds=10):
         if time.monotonic() > deadline:
             raise AssertionError(f"the server was still on the call {seconds}s after the Caller hung up")
         time.sleep(0.05)
-

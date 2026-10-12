@@ -46,9 +46,7 @@ async def test_a_verified_patient_gets_the_same_clinic_info_without_any_patient_
             "There is parking behind the building.",
         ]
     ) as call:
-        await call.converse(
-            ["What time do you open?", f"Rosalind Okonkwo, {spoken(born)}.", "Is there parking?"]
-        )
+        await call.converse(["What time do you open?", f"Rosalind Okonkwo, {spoken(born)}.", "Is there parking?"])
 
         before, after = call.tool_results("get_clinic_info")
         assert before == after

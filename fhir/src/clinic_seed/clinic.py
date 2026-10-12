@@ -35,5 +35,6 @@ class Provider:
 
 # Szczepanski and Kowalczyk are the surnames speech-to-text is most likely to mangle.
 PROVIDERS = tuple(
-    Provider(p["key"], p["given"], p["family"], p["prefix"], p["roleCode"], p["roleDisplay"]) for p in _CLINIC["providers"]
+    Provider(p["key"], p["given"], p["family"], p["prefix"], p["roleCode"], p["roleDisplay"])
+    for p in _CLINIC["providers"]
 )

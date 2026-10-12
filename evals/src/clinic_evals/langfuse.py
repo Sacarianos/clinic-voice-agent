@@ -29,7 +29,9 @@ class LangfuseError(RuntimeError):
 
 
 class Langfuse:
-    def __init__(self, base_url: str, public_key: str, secret_key: str, *, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self, base_url: str, public_key: str, secret_key: str, *, transport: httpx.BaseTransport | None = None
+    ):
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"), auth=(public_key, secret_key), transport=transport, timeout=30
         )

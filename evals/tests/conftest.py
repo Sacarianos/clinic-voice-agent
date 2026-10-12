@@ -16,7 +16,10 @@ EHR_ADAPTER_URL = os.environ.get("EHR_ADAPTER_URL", "http://localhost:3000").rst
 @pytest.fixture(scope="session")
 def ehr_urls() -> tuple[str, str]:
     """(FHIR base URL, EHR adapter URL), once both answer."""
-    for name, url in [("HAPI", f"{FHIR_BASE_URL}/metadata?_summary=true"), ("the EHR adapter", f"{EHR_ADAPTER_URL}/healthz")]:
+    for name, url in [
+        ("HAPI", f"{FHIR_BASE_URL}/metadata?_summary=true"),
+        ("the EHR adapter", f"{EHR_ADAPTER_URL}/healthz"),
+    ]:
         try:
             httpx.get(url, timeout=10).raise_for_status()
         except httpx.HTTPError:

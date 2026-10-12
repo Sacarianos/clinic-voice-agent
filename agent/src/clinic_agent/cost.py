@@ -91,7 +91,10 @@ class Ledger:
     def summary(self) -> str:
         if not self._usage:
             return "Paid LLM calls: none"
-        parts = [f"{model} {self._calls[model]} calls, {_tokens(usage)}, {_dollars(call_cost(model, usage))}" for model, usage in self._usage.items()]
+        parts = [
+            f"{model} {self._calls[model]} calls, {_tokens(usage)}, {_dollars(call_cost(model, usage))}"
+            for model, usage in self._usage.items()
+        ]
         return f"Paid LLM calls: {'; '.join(parts)}; total {_dollars(self.dollars())}"
 
 

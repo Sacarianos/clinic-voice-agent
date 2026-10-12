@@ -35,6 +35,6 @@ class _ToLoguru(logging.Handler):
             level: str | int = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
-        logger.patch(
-            lambda r: r.update(name=record.name, function=record.funcName, line=record.lineno)
-        ).opt(exception=record.exc_info).log(level, record.getMessage())
+        logger.patch(lambda r: r.update(name=record.name, function=record.funcName, line=record.lineno)).opt(
+            exception=record.exc_info
+        ).log(level, record.getMessage())

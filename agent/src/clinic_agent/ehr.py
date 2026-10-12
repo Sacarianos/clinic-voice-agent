@@ -81,7 +81,9 @@ class EhrAdapter:
                 async with httpx.AsyncClient(base_url=self.base_url, timeout=ADAPTER_REQUEST_TIMEOUT_SECS) as client:
                     return await client.request(method, path, **options)
         except TimeoutError as timeout:
-            raise httpx.TimeoutException(f"{method} {path}: no answer within {ADAPTER_REQUEST_TIMEOUT_SECS} s") from timeout
+            raise httpx.TimeoutException(
+                f"{method} {path}: no answer within {ADAPTER_REQUEST_TIMEOUT_SECS} s"
+            ) from timeout
 
     async def verify_patient(
         self, *, given_name: str, family_name: str, date_of_birth: str, family_name_spelled: bool = False
@@ -148,13 +150,13 @@ class EhrAdapter:
         response = await self._request("GET", "/appointments", params={"patientId": patient_id})
         response.raise_for_status()
         return [
-            Appointment(a["appointmentId"], a["slotId"], a["providerName"], datetime.fromisoformat(a["start"]), a["visitType"])
+            Appointment(
+                a["appointmentId"], a["slotId"], a["providerName"], datetime.fromisoformat(a["start"]), a["visitType"]
+            )
             for a in response.json()["appointments"]
         ]
 
-    async def book(
-        self, *, patient_id: str, slot_id: str, visit_type: VisitType, idempotency_key: str
-    ) -> WriteOutcome:
+    async def book(self, *, patient_id: str, slot_id: str, visit_type: VisitType, idempotency_key: str) -> WriteOutcome:
         body = {"patientId": patient_id, "slotId": slot_id, "visitType": visit_type, "idempotencyKey": idempotency_key}
         return await self._write("/appointments", body)
 

@@ -74,7 +74,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.scenario:
         unknown = set(args.scenario) - {s.name for s in scenarios}
         if unknown:
-            parser.error(f"unknown scenario {', '.join(sorted(unknown))}; known: {', '.join(s.name for s in scenarios)}")
+            parser.error(
+                f"unknown scenario {', '.join(sorted(unknown))}; known: {', '.join(s.name for s in scenarios)}"
+            )
         scenarios = [s for s in scenarios if s.name in args.scenario]
 
     runs = len(scenarios) * args.repeats
@@ -89,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     except PaidCallsNotAllowed as refusal:
         print(refusal, file=sys.stderr)
         return 2
-    limit = f", stopping at ${args.max_dollars:.2f}" if args.max_dollars is not None else ", with no --max-dollars limit"
+    limit = (
+        f", stopping at ${args.max_dollars:.2f}" if args.max_dollars is not None else ", with no --max-dollars limit"
+    )
     print(f"Estimated cost: {estimated} for {runs} runs of {args.config}{limit}.", flush=True)
 
     noise = NoiseInjector(load_confusions(), rate=args.noise_rate)
@@ -101,7 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(error))
     langfuse = Langfuse.from_env(env)
     if langfuse is None:
-        print("LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not set: scores are saved locally only.", file=sys.stderr)
+        print(
+            "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are not set: scores are saved locally only.", file=sys.stderr
+        )
 
     results = asyncio.run(
         run_evals(

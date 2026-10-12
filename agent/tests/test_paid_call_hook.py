@@ -37,7 +37,9 @@ def hook_input(command: str, tool: str = "Bash", **tool_input) -> str:
 
 
 def run_hook(stdin: str) -> subprocess.CompletedProcess:
-    return subprocess.run([find_bash(), str(HOOK)], input=stdin, capture_output=True, text=True, encoding="utf-8", timeout=30)
+    return subprocess.run(
+        [find_bash(), str(HOOK)], input=stdin, capture_output=True, text=True, encoding="utf-8", timeout=30
+    )
 
 
 BLOCKED = [
@@ -93,7 +95,12 @@ def test_a_free_command_or_one_that_opts_in_goes_through(command):
 
 def test_powershell_commands_are_held_to_the_same_rules():
     assert run_hook(hook_input("uv run clinic-evals --config haiku", tool="PowerShell")).returncode == 2
-    assert run_hook(hook_input("$env:ALLOW_PAID_CALLS = '1'; uv run clinic-evals --config haiku", tool="PowerShell")).returncode == 0
+    assert (
+        run_hook(
+            hook_input("$env:ALLOW_PAID_CALLS = '1'; uv run clinic-evals --config haiku", tool="PowerShell")
+        ).returncode
+        == 0
+    )
     assert run_hook(hook_input("$env:ALLOW_PAID_CALLS=1; uv run pytest --llm haiku", tool="PowerShell")).returncode == 0
     assert run_hook(hook_input("uv run clinic-evals --report", tool="PowerShell")).returncode == 0
 
@@ -124,5 +131,5 @@ def test_the_project_settings_run_the_hook_before_every_shell_command():
     [handler] = group["hooks"]
     assert handler["type"] == "command"
     assert handler["shell"] == "bash"
-    assert handler["command"].endswith(".claude/hooks/block-paid-calls.sh\"")
+    assert handler["command"].endswith('.claude/hooks/block-paid-calls.sh"')
     assert HOOK.exists()

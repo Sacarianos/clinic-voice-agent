@@ -46,16 +46,14 @@ GREETING = f"Thank you for calling {CLINIC_NAME}. How can I help you today?"
 
 # The same words whatever didn't match, so the line can't be used to learn who is a Patient here.
 VERIFICATION_FAILED = (
-    "I'm sorry, I couldn't verify those details. "
-    "Could you tell me your full name and date of birth one more time?"
+    "I'm sorry, I couldn't verify those details. Could you tell me your full name and date of birth one more time?"
 )
 
 # Several Patients matched. Spelling settles it, and it doesn't count as a failed attempt.
 SPELL_LAST_NAME = "Thanks. To be sure I find the right record, could you spell your last name for me?"
 
 HANDOFF_AFTER_FAILED_VERIFICATION = (
-    "I'm sorry, I wasn't able to verify your identity. "
-    "A member of our staff will call you back to help. Goodbye."
+    "I'm sorry, I wasn't able to verify your identity. A member of our staff will call you back to help. Goodbye."
 )
 
 MAX_FAILED_VERIFICATIONS = 2

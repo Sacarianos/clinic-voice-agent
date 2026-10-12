@@ -305,7 +305,9 @@ class _TurnWatch(BaseObserver):
             started = self._tools_running.pop(frame.tool_call_id, None)
             took = time.perf_counter() - started if started is not None else 0.0
             position = len(self._call.transcript)
-            self._call.tool_calls.append(ToolCall(frame.function_name, dict(frame.arguments), frame.result, position, took))
+            self._call.tool_calls.append(
+                ToolCall(frame.function_name, dict(frame.arguments), frame.result, position, took)
+            )
         elif isinstance(frame, MetricsFrame) and from_llm:
             self._call.llm_usage += [data.value for data in frame.data if isinstance(data, LLMUsageMetricsData)]
             self._call.llm_ttfb_secs += [data.value for data in frame.data if isinstance(data, TTFBMetricsData)]

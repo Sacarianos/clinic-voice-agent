@@ -18,7 +18,9 @@ AGENT_DIR = Path(__file__).resolve().parents[1]
 
 def test_the_ledger_sums_calls_tokens_and_dollars_per_model():
     ledger = Ledger()
-    ledger.add("claude-haiku-4-5", TokenUsage(input_tokens=10_000, output_tokens=1_000, cache_read_tokens=5_000), calls=3)
+    ledger.add(
+        "claude-haiku-4-5", TokenUsage(input_tokens=10_000, output_tokens=1_000, cache_read_tokens=5_000), calls=3
+    )
     ledger.add("claude-haiku-4-5", TokenUsage(input_tokens=2_000, output_tokens=200), calls=1)
     ledger.add("google/gemini-3.6-flash", TokenUsage(input_tokens=4_000, output_tokens=400), calls=2)
 
@@ -57,16 +59,26 @@ def test_an_empty_ledger_has_nothing_to_report():
 
 def test_usage_reported_by_an_anthropic_service_adds_up_without_double_counting_the_cache():
     reported = [
-        LLMTokenUsage(prompt_tokens=700, completion_tokens=20, cache_read_input_tokens=300, cache_creation_input_tokens=50, total_tokens=720),
+        LLMTokenUsage(
+            prompt_tokens=700,
+            completion_tokens=20,
+            cache_read_input_tokens=300,
+            cache_creation_input_tokens=50,
+            total_tokens=720,
+        ),
         LLMTokenUsage(prompt_tokens=100, completion_tokens=5, total_tokens=105),
     ]
     llm = AnthropicLLMService(api_key="unused")
 
-    assert token_usage(llm, reported) == TokenUsage(input_tokens=800, output_tokens=25, cache_read_tokens=300, cache_write_tokens=50)
+    assert token_usage(llm, reported) == TokenUsage(
+        input_tokens=800, output_tokens=25, cache_read_tokens=300, cache_write_tokens=50
+    )
 
 
 def test_usage_reported_by_an_openai_compatible_service_counts_cached_input_once():
-    reported = [LLMTokenUsage(prompt_tokens=1_000, completion_tokens=20, cache_read_input_tokens=300, total_tokens=1_020)]
+    reported = [
+        LLMTokenUsage(prompt_tokens=1_000, completion_tokens=20, cache_read_input_tokens=300, total_tokens=1_020)
+    ]
     llm = OpenRouterLLMService(api_key="unused")
 
     assert token_usage(llm, reported) == TokenUsage(input_tokens=700, output_tokens=20, cache_read_tokens=300)
@@ -102,7 +114,12 @@ def run_pytest(*args: str) -> subprocess.CompletedProcess:
     env = {k: v for k, v in os.environ.items() if k != OPT_IN} | {"PYTHONUTF8": "1"}  # pipecat's banner isn't cp1252
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *args],
-        cwd=AGENT_DIR, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60,
+        cwd=AGENT_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
     )
 
 

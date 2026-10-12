@@ -178,5 +178,12 @@ async def test_the_audit_log_holds_no_names_dates_of_birth_or_anything_the_calle
     recorded = [json.dumps(entry) for entry in entries_for(audit_log, patient_id)]
     assert len(recorded) == 4
     text = "\n".join(recorded).casefold()
-    for forbidden in ["rosalind", "okonkwo", born, spoken(born).casefold(), call.caller_phone, *map(str.casefold, lines)]:
+    for forbidden in [
+        "rosalind",
+        "okonkwo",
+        born,
+        spoken(born).casefold(),
+        call.caller_phone,
+        *map(str.casefold, lines),
+    ]:
         assert forbidden not in text

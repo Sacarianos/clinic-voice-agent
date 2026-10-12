@@ -65,7 +65,9 @@ async def run_evals(
             record = await run_scenario(
                 scenario, *ehr_urls, agent=agent, caller=caller, reply_timeout_secs=reply_timeout_secs
             )
-            result = RunResult(batch_id, scenario.name, repeat, record, _masked(grade(record), record), started, datetime.now(UTC))
+            result = RunResult(
+                batch_id, scenario.name, repeat, record, _masked(grade(record), record), started, datetime.now(UTC)
+            )
             results.append(result)
             print(_run_line(result), flush=True)
             _save(results, config, noise_rate, results_dir / f"{batch_id}.json")
@@ -136,7 +138,13 @@ def batch_document(results: list[RunResult], config: str, noise_rate: float) -> 
             "usage": asdict(r.record.usage),
             "caller_usage": asdict(r.record.caller_usage),
             "noise": [
-                {"turn": n.turn, "category": n.confusion.category, "said": n.confusion.said, "heard": n.confusion.heard, "source": n.confusion.source}
+                {
+                    "turn": n.turn,
+                    "category": n.confusion.category,
+                    "said": n.confusion.said,
+                    "heard": n.confusion.heard,
+                    "source": n.confusion.source,
+                }
                 for n in r.record.noise
             ],
             "transcript": r.record.transcript,

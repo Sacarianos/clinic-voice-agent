@@ -223,7 +223,11 @@ async def test_a_no_to_the_reschedule_read_back_goes_back_to_choosing_and_a_resc
         ]
     ) as call:
         await call.converse(
-            ["I need to move my appointment to any time with Dr. Faraday.", f"Rosalind Okonkwo, {spoken(born)}.", "10 AM."]
+            [
+                "I need to move my appointment to any time with Dr. Faraday.",
+                f"Rosalind Okonkwo, {spoken(born)}.",
+                "10 AM.",
+            ]
         )
         assert call.state == "reschedule_read_back"
         at_read_back = len(call.offered_tools)

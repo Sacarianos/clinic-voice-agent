@@ -122,9 +122,7 @@ async def test_a_proxy_caller_who_gives_someone_elses_details_is_handed_off_with
         assert call.state == "handoff"
 
 
-async def test_a_patient_who_turns_out_to_be_calling_for_someone_else_is_handed_off_after_verification(
-    ehr, start_call
-):
+async def test_a_patient_who_turns_out_to_be_calling_for_someone_else_is_handed_off_after_verification(ehr, start_call):
     born = ehr.unused_birth_date()
     patient_id = ehr.create_patient(given="Rosalind", family="Okonkwo", birth_date=born)
 

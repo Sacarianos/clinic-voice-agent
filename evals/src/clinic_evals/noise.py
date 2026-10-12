@@ -52,7 +52,9 @@ def load_confusions(path: Path = CONFUSIONS_PATH) -> list[Confusion]:
         entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
         return [_confusion(entry) for entry in entries]
     except (KeyError, TypeError) as error:
-        raise ConfusionsError(f"{path.name}: a confusion needs a category, said, heard and source ({error!r})") from error
+        raise ConfusionsError(
+            f"{path.name}: a confusion needs a category, said, heard and source ({error!r})"
+        ) from error
     except ConfusionsError as error:
         raise ConfusionsError(f"{path.name}: {error}") from error
 

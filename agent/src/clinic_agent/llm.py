@@ -68,8 +68,6 @@ def create_llm(env: Mapping[str, str], *, system_instruction: str) -> LLMService
     api_key = require(env, config.api_key_env, f"LLM config {name!r}")
     return config.service(
         api_key=api_key,
-        settings=config.service.Settings(
-            model=config.model, system_instruction=system_instruction, **config.settings
-        ),
+        settings=config.service.Settings(model=config.model, system_instruction=system_instruction, **config.settings),
         run_in_parallel=RUN_TOOLS_IN_PARALLEL,
     )

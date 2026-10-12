@@ -52,7 +52,10 @@ def format_report(documents: list[dict]) -> str:
         ("tokens per call (in / out)", [_tokens_per_call(d) for d in documents]),
     ]
     lines = ["Pass rate per grader, latency and cost, per LLM config:"]
-    lines += [f"  {label:<{LABEL_WIDTH}}" + "".join(f"{value:<{COLUMN_WIDTH}}" for value in values).rstrip() for label, values in rows]
+    lines += [
+        f"  {label:<{LABEL_WIDTH}}" + "".join(f"{value:<{COLUMN_WIDTH}}" for value in values).rstrip()
+        for label, values in rows
+    ]
     lines += [f"  batch {d['config']}: {d['batch_id']}" for d in documents]
     lines += _problems(documents)
     return "\n".join(lines)
