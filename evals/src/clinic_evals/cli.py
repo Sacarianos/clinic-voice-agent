@@ -3,6 +3,7 @@
 
 Needs the local EHR stack at FHIR_BASE_URL and EHR_ADAPTER_URL, ANTHROPIC_API_KEY for the simulated
 Caller, the agent's LLM key, and the Langfuse keys to push scores. Costs money: never run it in CI.
+It refuses to start unless ALLOW_PAID_CALLS=1 is set, and prints an estimate first.
 """
 
 import argparse
@@ -17,6 +18,8 @@ from loguru import logger
 from clinic_agent.config import ConfigError, require
 from clinic_agent.conversation import ROLE
 from clinic_agent.llm import LLM_CONFIGS, create_llm
+from clinic_agent.paid_calls import PaidCallsNotAllowed, require_opt_in
+from clinic_evals.budget import estimated_dollars, spend_summary, unpriced_models
 from clinic_evals.caller import SimulatedCaller
 from clinic_evals.evals import RESULTS_DIR, batch_document, run_evals
 from clinic_evals.langfuse import Langfuse
@@ -44,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--repeats", type=int, default=3, help="runs per scenario (default 3)")
     parser.add_argument("--scenario", action="append", help="run only this scenario; repeat to pick several")
+    parser.add_argument(
+        "--max-dollars",
+        type=float,
+        help="stop the batch once the agent's and the simulated Caller's cost so far reaches this; the runs so far are saved",
+    )
     args = parser.parse_args(argv)
     if args.report:
         batches = latest_batch_per_config(args.results_dir)
@@ -53,6 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--config is required to run evals")
     if not 0 <= args.noise_rate <= 1:
         parser.error("--noise-rate must be between 0 and 1")
+    if args.max_dollars is not None:
+        if args.max_dollars <= 0:
+            parser.error("--max-dollars must be more than 0")
+        if unpriced := unpriced_models(args.config):
+            parser.error(f"{', '.join(unpriced)} has no price in clinic_agent.cost, so --max-dollars can't be enforced")
 
     logger.remove()
     logger.add(sys.stderr, level=os.environ.get("LOG_LEVEL", "WARNING"))
@@ -63,6 +76,21 @@ def main(argv: list[str] | None = None) -> int:
         if unknown:
             parser.error(f"unknown scenario {', '.join(sorted(unknown))}; known: {', '.join(s.name for s in scenarios)}")
         scenarios = [s for s in scenarios if s.name in args.scenario]
+
+    runs = len(scenarios) * args.repeats
+    estimate = estimated_dollars(args.config, runs)
+    estimated = "an unknown amount" if estimate is None else f"about ${estimate:.2f}"
+    try:
+        require_opt_in(
+            env,
+            what=f"clinic-evals --config {args.config}",
+            estimate=f"{estimated} for {runs} runs, more if the agent goes in circles",
+        )
+    except PaidCallsNotAllowed as refusal:
+        print(refusal, file=sys.stderr)
+        return 2
+    limit = f", stopping at ${args.max_dollars:.2f}" if args.max_dollars is not None else ", with no --max-dollars limit"
+    print(f"Estimated cost: {estimated} for {runs} runs of {args.config}{limit}.", flush=True)
 
     noise = NoiseInjector(load_confusions(), rate=args.noise_rate)
     agent_env = {**env, "LLM_CONFIG": args.config}
@@ -90,10 +118,12 @@ def main(argv: list[str] | None = None) -> int:
             results_dir=args.results_dir,
             reply_timeout_secs=REPLY_TIMEOUT_SECS,
             noise_rate=args.noise_rate,
+            max_dollars=args.max_dollars,
         )
     )
     if results:
         print(format_report([batch_document(results, args.config, args.noise_rate)]))
+        print(spend_summary(args.config, [r.record for r in results]))
         print(f"Transcripts: {args.results_dir / results[0].batch_id}.json")
     return 0
 

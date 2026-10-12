@@ -5,10 +5,9 @@ import re
 
 import pytest
 
+from clinic_agent.cost import TokenUsage, call_cost
 from clinic_evals.cli import main
-from clinic_evals.cost import call_cost
 from clinic_evals.graders import GRADERS
-from clinic_evals.record import TokenUsage
 from clinic_evals.report import format_report, latest_batch_per_config, percentile
 
 

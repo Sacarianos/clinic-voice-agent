@@ -10,6 +10,8 @@ The default run costs nothing. A scripted LLM plays the model, fake Deepgram and
 - `clinic-evals`
 - the voice server on real keys, and any script that loads `../.env`
 
+The repo enforces this. The first two refuse to start without `ALLOW_PAID_CALLS=1`, `clinic-evals` takes `--max-dollars`, and a project hook blocks all three kinds of command from Bash and PowerShell unless the command sets the opt-in. Set it only after the user approves, and only on the one command. See the README's Paid calls section.
+
 ## Real HAPI, never a mock
 
 Adapter, agent and eval tests talk to a real HAPI through the real adapter. Fault tests put a small proxy in front of the adapter or HAPI: `faulty_adapter` in the agent tests, and `held-ehr` and `delayed-ehr` in the adapter's `test/support/`. A proxy of this kind makes a race or a slow EHR happen on every run. The HAPI behaviour they exercise is in [hapi-fhir.md](hapi-fhir.md).
